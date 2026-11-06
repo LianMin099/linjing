@@ -4,19 +4,22 @@ from contextlib import closing
 from linjing_db import connect, nearby_banks, review_correction, submit_address_correction
 
 
+def seed_demo(db):
+    with db:
+        db.executemany('''
+            INSERT INTO places (id, kind, name, address, longitude, latitude, source)
+            VALUES (?, ?, ?, ?, ?, ?, '虚构测试数据')
+        ''', [
+            (1, 'community', '示例小区', '示例路 1 号', 114.21, 22.68),
+            (2, 'bank', '示例银行', '示例路 12 号', 114.213, 22.68),
+            (3, 'atm', '示例 ATM', '示例路 8 号', 114.211, 22.68),
+            (4, 'bank', '远处示例银行', '示例路 99 号', 114.24, 22.68),
+        ])
+
+
 def main():
     with closing(connect(':memory:')) as db:
-        with db:
-            db.executemany('''
-                INSERT INTO places (id, kind, name, address, longitude, latitude, source)
-                VALUES (?, ?, ?, ?, ?, ?, '虚构测试数据')
-            ''', [
-                (1, 'community', '示例小区', '示例路 1 号', 114.21, 22.68),
-                (2, 'bank', '示例银行', '示例路 12 号', 114.213, 22.68),
-                (3, 'atm', '示例 ATM', '示例路 8 号', 114.211, 22.68),
-                (4, 'bank', '远处示例银行', '示例路 99 号', 114.24, 22.68),
-            ])
-
+        seed_demo(db)
         print('邻境业务演示 · 以下地点均为虚构测试数据')
         print('1. 查询示例小区 1000 米范围内的银行和 ATM')
         for place in nearby_banks(db, 1, 1000):
