@@ -7,3 +7,9 @@ __pycache__/
 reports/
 data/
 *.log
+
+/AGENTS.md
+/docs/本机操作指南.md
+/docs/项目约定.md
+/docs/比赛交付检查表.md
+/上传到GitHub.cmd
