@@ -22,6 +22,8 @@
 
 ## 地点数据入库
 
+双击 `打开真实地点查询.cmd` 可以导入并浏览首批真实样本。查询为只读，默认范围为 3 公里。地点来源、坐标精度与许可见[样本说明](samples/README.md)。
+
 `python import_places.py 数据文件.json` 只检查数据。确认允许存储后，可添加 `--db data/linjing.sqlite` 写入已创建的 `data` 目录。入库后保留来源、使用依据和导入时间。同一来源编号重复导入会跳过，已审核修改不会被覆盖。网页教学演示继续使用独立的虚构数据。
 
 JSON 顶层包含 `coordinate_system`（目前只接受 `WGS84`）、`source_url`、`permission_url`、`school` 和 `places`。`school` 包含 `longitude`、`latitude`、`source_url`、`permission_url`。`places` 中每条包含 `source_id`、`kind`（`bank`、`atm` 或 `community`）、`name`、`address`、`longitude`、`latitude`。程序检查链接格式和 3 公里范围，使用依据需人工核对。

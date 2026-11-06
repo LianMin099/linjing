@@ -1,0 +1,15 @@
+{
+  "coordinate_system": "WGS84",
+  "source_url": "https://www.openstreetmap.org/",
+  "permission_url": "https://www.openstreetmap.org/copyright",
+  "school": {
+    "longitude": 114.2107,
+    "latitude": 22.68794,
+    "source_url": "https://www.openstreetmap.org/way/330064305",
+    "permission_url": "https://www.openstreetmap.org/copyright"
+  },
+  "places": [
+    {"source_id": "way/1245469351", "kind": "community", "name": "嘉欣园", "address": "深圳市龙岗区龙城街道龙红格社区", "longitude": 114.21136, "latitude": 22.71332},
+    {"source_id": "way/544063816:cuhksz-atm-area", "kind": "atm", "name": "中国银行 ATM（港中大深圳上园）", "address": "香港中文大学（深圳）上园服务中心；坐标为上园区域参考点", "longitude": 114.19759, "latitude": 22.69356}
+  ]
+}
