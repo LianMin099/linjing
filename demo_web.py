@@ -2,6 +2,7 @@
 import argparse
 from contextlib import closing
 from html import escape
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import secrets
@@ -18,7 +19,10 @@ RADII = (100, 300, 1000, 3000)
 STATUS = {'pending': '待审核', 'approved': '已通过', 'rejected': '已驳回'}
 NOTICES = {'submitted': '建议已提交。审核通过前，查询仍显示原地址。',
            'approved': '审核通过。查询结果已更新，旧地址仍保留在审核记录中。',
-           'rejected': '建议已驳回。查询结果继续显示原地址。'}
+           'rejected': '建议已驳回。查询结果继续显示原地址。',
+           'signed-in': '管理员已登录，可以审核待处理的纠错。',
+           'signed-out': '已退出管理员模式。'}
+ADMIN_COOKIE = 'linjing_admin'
 
 
 def form_fields(token, radius):
@@ -26,14 +30,14 @@ def form_fields(token, radius):
             f'<input type="hidden" name="radius" value="{radius}">')
 
 
-def correction_history(db, hidden):
+def correction_history(db, hidden, can_review):
     records = []
     for row in db.execute('''
         SELECT corrections.*, places.name FROM corrections
         JOIN places ON places.id = corrections.place_id ORDER BY corrections.id DESC
     '''):
         buttons = ''
-        if row['status'] == 'pending':
+        if can_review and row['status'] == 'pending':
             buttons = (f'<form method="post" action="/review">{hidden}'
                        f'<input type="hidden" name="id" value="{row["id"]}">'
                        '<button name="decision" value="approve">审核通过</button> '
@@ -56,7 +60,7 @@ def page(db, token, radius, searched, notice=''):
         )
         results = f'<ul>{results}</ul>' if results else '<p>这个范围内没有示例银行或 ATM。</p>'
 
-    history = correction_history(db, hidden)
+    history = correction_history(db, hidden, can_review=True)
     message = f'<p class="notice" role="status">{escape(notice)}</p>' if notice else ''
 
     return f'''<!doctype html>
@@ -93,7 +97,7 @@ def parse_radius(value):
     return int(value) if value in tuple(map(str, RADII)) else 1000
 
 
-def pilot_page(db, token, radius, notice):
+def pilot_page(db, token, radius, notice, is_admin):
     community = db.execute("SELECT id, name FROM places WHERE kind = 'community' ORDER BY id LIMIT 1").fetchone()
     if community is None:
         return '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><p>数据库里还没有小区记录。</p></html>'
@@ -111,6 +115,14 @@ def pilot_page(db, token, radius, notice):
         for row in nearby_banks(db, community['id'], radius)
     )
     message = f'<p role="status">{escape(notice)}</p>' if notice else ''
+    if is_admin:
+        admin_panel = (f'<p>当前身份：管理员</p><form method="post" action="/logout">{hidden}'
+                       '<button>退出管理员模式</button></form>')
+    else:
+        admin_panel = (f'<p>当前身份：访客。可以提交纠错，审核需要管理员登录。</p>'
+                       f'<form method="post" action="/login">{hidden}'
+                       '<label>本次管理员口令 <input name="code" type="password" maxlength="64" required></label> '
+                       '<button>管理员登录</button></form><small>口令显示在本机启动窗口。</small>')
     return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>邻境 · 真实样本查询</title>
 <style>body{{max-width:720px;margin:40px auto;padding:0 18px;font:16px/1.6 system-ui,sans-serif;color:#19332d;background:#eef4f2}}
@@ -123,8 +135,9 @@ details form, li form {{margin:10px 0}} details label {{display:block;margin-bot
 {('<ul>' + results + '</ul>') if results else '<p>当前样本在这个范围内没有匹配记录。</p>'}
 <p>ATM 的位置以香港中文大学（深圳）上园区域代表点计算，设备实际位置和开放情况待核实。当前只包含首批样本。</p>
 <p>坐标数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors（ODbL）</a></p>
-</section><section><h2>本机模拟审核</h2><p>修改保存在这台电脑的样本数据库中。原始来源和坐标继续保留。</p>
-{correction_history(db, hidden)}</section></main></html>'''
+</section><section><h2>本机审核</h2>{admin_panel}
+<p>修改保存在这台电脑的样本数据库中。原始来源和坐标继续保留。</p>
+{correction_history(db, hidden, can_review=is_admin)}</section></main></html>'''
 
 
 class LocalDemoServer(HTTPServer):
@@ -135,13 +148,26 @@ class LocalDemoServer(HTTPServer):
 
 
 class DemoHandler(BaseHTTPRequestHandler):
+    def is_admin(self):
+        if not self.server.pilot or self.server.admin_session is None:
+            return False
+        cookies = SimpleCookie()
+        try:
+            cookies.load(self.headers.get('Cookie', ''))
+        except CookieError:
+            return False
+        session = cookies.get(ADMIN_COOKIE)
+        return session is not None and secrets.compare_digest(
+            session.value.encode('utf-8'), self.server.admin_session.encode('ascii'))
+
     def send_page(self, radius=1000, searched=False, notice='', status=200):
-        content = (pilot_page(self.server.db, self.server.token, radius, notice) if self.server.pilot
+        content = (pilot_page(self.server.db, self.server.token, radius, notice, self.is_admin()) if self.server.pilot
                    else page(self.server.db, self.server.token, radius, searched, notice))
         body = content.encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
         self.end_headers()
         self.wfile.write(body)
 
@@ -158,9 +184,11 @@ class DemoHandler(BaseHTTPRequestHandler):
         self.send_page(radius, 'radius' in fields, notice)
 
     def do_POST(self):
-        if not self.valid_host() or self.path not in ('/correction', '/review'):
+        paths = ('/correction', '/review', '/login', '/logout') if self.server.pilot else ('/correction', '/review')
+        if not self.valid_host() or self.path not in paths:
             self.send_error(404)
             return
+        cookie = None
         try:
             length = int(self.headers.get('Content-Length', '0'))
             if not 0 < length <= 4096:
@@ -171,7 +199,20 @@ class DemoHandler(BaseHTTPRequestHandler):
                 self.send_error(403)
                 return
             radius = parse_radius(fields.get('radius', [''])[0])
-            if self.path == '/correction':
+            if self.path == '/login':
+                code = fields.get('code', [''])[0].strip()
+                if not secrets.compare_digest(code.encode('utf-8'), self.server.admin_code.encode('ascii')):
+                    self.send_page(radius, notice='口令不正确，请查看启动窗口。', status=403)
+                    return
+                self.server.admin_session = secrets.token_urlsafe(32)
+                cookie = f'{ADMIN_COOKIE}={self.server.admin_session}; Path=/; HttpOnly; SameSite=Strict'
+                notice = 'signed-in'
+            elif self.path == '/logout':
+                if self.is_admin():
+                    self.server.admin_session = None
+                cookie = f'{ADMIN_COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict'
+                notice = 'signed-out'
+            elif self.path == '/correction':
                 address = fields.get('address', [''])[0]
                 reason = fields.get('reason', [''])[0]
                 if len(address) > 100 or len(reason) > 200:
@@ -189,6 +230,9 @@ class DemoHandler(BaseHTTPRequestHandler):
                 submit_address_correction(self.server.db, place_id, address, reason)
                 notice = 'submitted'
             else:
+                if self.server.pilot and not self.is_admin():
+                    self.send_page(radius, notice='只有管理员可以审核纠错。', status=403)
+                    return
                 decision = fields.get('decision', [''])[0]
                 feedback_id = fields.get('id', [''])[0]
                 if decision not in ('approve', 'reject') or not feedback_id.isascii() or not feedback_id.isdigit() or len(feedback_id) > 18:
@@ -200,6 +244,8 @@ class DemoHandler(BaseHTTPRequestHandler):
             return
         self.send_response(303)
         self.send_header('Location', '/?radius={}&notice={}'.format(radius, notice))
+        if cookie is not None:
+            self.send_header('Set-Cookie', cookie)
         self.end_headers()
 
 
@@ -220,8 +266,12 @@ def main():
             seed_demo(db)
         server.db = db
         server.token = secrets.token_urlsafe(24)
+        server.admin_session = None
         url = 'http://127.0.0.1:{}'.format(server.server_port)
         print('邻境本机演示：' + url, flush=True)
+        if server.pilot:
+            server.admin_code = secrets.token_urlsafe(12)
+            print('本次管理员口令：' + server.admin_code, flush=True)
         if args.open_browser:
             webbrowser.open(url)
         try:
