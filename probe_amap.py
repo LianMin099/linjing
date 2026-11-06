@@ -14,6 +14,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+from linjing_db import distance_m
+
 BASE = 'https://restapi.amap.com/v5/place/'
 CHINA_TIME = timezone(timedelta(hours=8))
 
@@ -136,9 +138,31 @@ def self_test():
     print('离线检查通过：缺失值、坐标有效性、字段统计。未调用真实 API。')
 
 
+def check_pair(key):
+    """短期人工核验。只在终端显示候选和距离，不生成报告或入库。"""
+    schools = request_api('text', {'keywords': '深圳信息职业技术', 'region': '440307',
+                                   'city_limit': 'true', 'page_size': 10}, key)
+    center = tuple(map(float, choose_school(schools).split(',')))
+    for label, keyword in [('银行', '荷坳支行'), ('小区', '颐安都会中央花园')]:
+        print('\n核对{}：{}'.format(label, keyword))
+        pois = request_api('text', {'keywords': keyword, 'region': '440307',
+                                     'city_limit': 'true', 'page_size': 10}, key)
+        if not pois:
+            print('没有找到候选。')
+        for poi in pois:
+            location = poi.get('location')
+            distance = '坐标缺失'
+            if valid_location(location):
+                meters = distance_m(center, tuple(map(float, location.split(','))))
+                distance = '直线约 {:.0f} 米，{}试点范围'.format(meters, '在' if meters <= 3000 else '超出')
+            print('{} | {} | {}'.format(poi.get('name', ''), poi.get('address', ''), distance))
+    print('\n请核对银行名称、商铺地址和小区期数。结果仅在本次窗口展示。')
+
+
 def main():
     parser = argparse.ArgumentParser(description='邻境：候选数据源验证')
     parser.add_argument('--self-test', action='store_true', help='离线自检，不访问网络')
+    parser.add_argument('--check-pair', action='store_true', help='临时核对两条试点候选')
     args = parser.parse_args()
     if args.self_test:
         self_test()
@@ -153,6 +177,13 @@ def main():
     if not key:
         print('未输入 Key，已退出。')
         return 1
+    if args.check_pair:
+        try:
+            check_pair(key)
+        except ProbeError as exc:
+            print(str(exc))
+            return 1
+        return 0
     results = []
     try:
         print('正在搜索学校……')
