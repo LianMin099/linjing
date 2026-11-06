@@ -21,9 +21,31 @@ NOTICES = {'submitted': '建议已提交。审核通过前，查询仍显示原�
            'rejected': '建议已驳回。查询结果继续显示原地址。'}
 
 
+def form_fields(token, radius):
+    return (f'<input type="hidden" name="token" value="{token}">'
+            f'<input type="hidden" name="radius" value="{radius}">')
+
+
+def correction_history(db, hidden):
+    records = []
+    for row in db.execute('''
+        SELECT corrections.*, places.name FROM corrections
+        JOIN places ON places.id = corrections.place_id ORDER BY corrections.id DESC
+    '''):
+        buttons = ''
+        if row['status'] == 'pending':
+            buttons = (f'<form method="post" action="/review">{hidden}'
+                       f'<input type="hidden" name="id" value="{row["id"]}">'
+                       '<button name="decision" value="approve">审核通过</button> '
+                       '<button class="secondary" name="decision" value="reject">驳回</button></form>')
+        records.append(f'<li><strong>{STATUS[row["status"]]}</strong> · {escape(row["name"])}<br>'
+                       f'<span>{escape(row["old_address"])} → {escape(row["proposed_address"])}</span><br>'
+                       f'<small>依据：{escape(row["reason"])}</small>{buttons}</li>')
+    return '<ul>' + ''.join(records) + '</ul>' if records else '<p>还没有纠错记录。</p>'
+
+
 def page(db, token, radius, searched, notice=''):
-    hidden = f'<input type="hidden" name="token" value="{token}">' + (
-        f'<input type="hidden" name="radius" value="{radius}">')
+    hidden = form_fields(token, radius)
     options = ''.join(f'<option value="{r}"{" selected" if r == radius else ""}>{r} 米</option>' for r in RADII)
     results = '<p>选择距离后点击「查附近」，查看示例小区附近的银行和 ATM。</p>'
     if searched:
@@ -34,18 +56,7 @@ def page(db, token, radius, searched, notice=''):
         )
         results = f'<ul>{results}</ul>' if results else '<p>这个范围内没有示例银行或 ATM。</p>'
 
-    records = []
-    for row in db.execute('SELECT * FROM corrections ORDER BY id DESC'):
-        buttons = ''
-        if row['status'] == 'pending':
-            buttons = (f'<form method="post" action="/review">{hidden}'
-                       f'<input type="hidden" name="id" value="{row["id"]}">'
-                       '<button name="decision" value="approve">审核通过</button> '
-                       '<button class="secondary" name="decision" value="reject">驳回</button></form>')
-        records.append(f'<li><strong>{STATUS[row["status"]]}</strong>'
-                       f'<span>{escape(row["old_address"])} → {escape(row["proposed_address"])}</span>'
-                       f'<small>依据：{escape(row["reason"])}</small>{buttons}</li>')
-    history = '<ul>' + ''.join(records) + '</ul>' if records else '<p>还没有纠错记录。</p>'
+    history = correction_history(db, hidden)
     message = f'<p class="notice" role="status">{escape(notice)}</p>' if notice else ''
 
     return f'''<!doctype html>
@@ -82,27 +93,38 @@ def parse_radius(value):
     return int(value) if value in tuple(map(str, RADII)) else 1000
 
 
-def pilot_page(db, radius):
+def pilot_page(db, token, radius, notice):
     community = db.execute("SELECT id, name FROM places WHERE kind = 'community' ORDER BY id LIMIT 1").fetchone()
     if community is None:
         return '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><p>数据库里还没有小区记录。</p></html>'
     options = ''.join(f'<option value="{r}"{" selected" if r == radius else ""}>{r} 米</option>' for r in RADII)
+    hidden = form_fields(token, radius)
     results = ''.join(
         f'<li><strong>{escape(row["name"])}</strong><p>{escape(row["address"])}</p>'
-        f'<p>到上园区域参考点的直线距离约 {row["distance_m"]:.0f} 米</p></li>'
+        f'<p>到上园区域参考点的直线距离约 {row["distance_m"]:.0f} 米 · 版本 {row["version"]}'
+        f'{" · 本机修订" if row["version"] > 1 else ""}</p>'
+        f'<details><summary>提交地址纠错</summary><form method="post" action="/correction">{hidden}'
+        f'<input type="hidden" name="place_id" value="{row["id"]}">'
+        '<label>建议地址 <input name="address" maxlength="100" required></label> '
+        '<label>依据 <input name="reason" maxlength="200" required></label> '
+        '<button>提交纠错</button></form></details></li>'
         for row in nearby_banks(db, community['id'], radius)
     )
+    message = f'<p role="status">{escape(notice)}</p>' if notice else ''
     return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>邻境 · 真实样本查询</title>
 <style>body{{max-width:720px;margin:40px auto;padding:0 18px;font:16px/1.6 system-ui,sans-serif;color:#19332d;background:#eef4f2}}
-section{{background:white;padding:20px;border-radius:14px}}select,button{{font:inherit;padding:5px 8px}}a{{color:#135d4c}}</style>
+section{{background:white;padding:20px;border-radius:14px;margin-bottom:16px}}select,button,input{{font:inherit;padding:5px 8px}}a{{color:#135d4c}}
+details form, li form {{margin:10px 0}} details label {{display:block;margin-bottom:6px}} input {{max-width:100%}}</style>
 <main><header><p>邻境 · 首批真实样本</p><h1>{escape(community['name'])}周边查询</h1></header>
+{message}
 <section><form method="get"><label for="radius">直线范围</label> <select id="radius" name="radius">{options}</select>
 <button>查附近</button></form>
 {('<ul>' + results + '</ul>') if results else '<p>当前样本在这个范围内没有匹配记录。</p>'}
 <p>ATM 的位置以香港中文大学（深圳）上园区域代表点计算，设备实际位置和开放情况待核实。当前只包含首批样本。</p>
 <p>坐标数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors（ODbL）</a></p>
-</section></main></html>'''
+</section><section><h2>本机模拟审核</h2><p>修改保存在这台电脑的样本数据库中。原始来源和坐标继续保留。</p>
+{correction_history(db, hidden)}</section></main></html>'''
 
 
 class LocalDemoServer(HTTPServer):
@@ -114,7 +136,7 @@ class LocalDemoServer(HTTPServer):
 
 class DemoHandler(BaseHTTPRequestHandler):
     def send_page(self, radius=1000, searched=False, notice='', status=200):
-        content = (pilot_page(self.server.db, radius) if self.server.pilot
+        content = (pilot_page(self.server.db, self.server.token, radius, notice) if self.server.pilot
                    else page(self.server.db, self.server.token, radius, searched, notice))
         body = content.encode('utf-8')
         self.send_response(status)
@@ -136,9 +158,6 @@ class DemoHandler(BaseHTTPRequestHandler):
         self.send_page(radius, 'radius' in fields, notice)
 
     def do_POST(self):
-        if self.server.pilot:
-            self.send_error(405)
-            return
         if not self.valid_host() or self.path not in ('/correction', '/review'):
             self.send_error(404)
             return
@@ -157,7 +176,17 @@ class DemoHandler(BaseHTTPRequestHandler):
                 reason = fields.get('reason', [''])[0]
                 if len(address) > 100 or len(reason) > 200:
                     raise ValueError('地址或纠错依据过长。')
-                submit_address_correction(self.server.db, 2, address, reason)
+                place_id = 2
+                if self.server.pilot:
+                    raw_id = fields.get('place_id', [''])[0]
+                    if not raw_id.isascii() or not raw_id.isdigit() or len(raw_id) > 18:
+                        raise ValueError('请选择有效的地点。')
+                    place_id = int(raw_id)
+                    place = self.server.db.execute(
+                        "SELECT 1 FROM places WHERE id = ? AND kind IN ('bank', 'atm')", (place_id,)).fetchone()
+                    if place is None:
+                        raise ValueError('找不到对应银行或 ATM。')
+                submit_address_correction(self.server.db, place_id, address, reason)
                 notice = 'submitted'
             else:
                 decision = fields.get('decision', [''])[0]
@@ -177,13 +206,14 @@ class DemoHandler(BaseHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description='邻境本机教学演示')
     parser.add_argument('--open-browser', action='store_true', help='启动后打开默认浏览器')
-    parser.add_argument('--pilot-db', type=Path, help='只读打开真实样本数据库')
+    parser.add_argument('--pilot-db', type=Path, help='打开真实样本数据库，持久保存本机纠错')
     args = parser.parse_args()
     if args.pilot_db is None:
         db = connect(':memory:')
     else:
-        db = sqlite3.connect(args.pilot_db.resolve().as_uri() + '?mode=ro', uri=True)
+        db = sqlite3.connect(args.pilot_db.resolve().as_uri() + '?mode=rw', uri=True)
         db.row_factory = sqlite3.Row
+        db.execute('PRAGMA foreign_keys = ON')
     with closing(db), LocalDemoServer(('127.0.0.1', 0), DemoHandler) as server:
         server.pilot = args.pilot_db is not None
         if not server.pilot:
