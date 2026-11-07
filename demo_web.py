@@ -164,7 +164,7 @@ details form, li form {{margin:10px 0}} details label {{display:block;margin-bot
 <label>设施类型 <select name="kind">{kind_options}</select></label>
 <button>查附近</button></form>
 {('<ul>' + results + '</ul>') if results else '<p>当前样本在这个范围内没有匹配记录。</p>'}
-<p>ATM 的位置以香港中文大学（深圳）上园区域代表点计算，设备实际位置和开放情况待核实。当前只包含首批样本。</p>
+<p>中信银行网点和中国银行 ATM 分别使用港中大（深圳）下园、上园的区域代表点。页面距离为估算，具体入口和开放情况待核实。</p>
 <p>坐标数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors（ODbL）</a></p>
 </section><section><h2>本机审核</h2>{admin_panel}
 <p>修改保存在这台电脑的样本数据库中。原始来源和坐标继续保留。</p>

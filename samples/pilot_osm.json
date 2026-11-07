@@ -10,6 +10,7 @@
   },
   "places": [
     {"source_id": "way/1245469351", "kind": "community", "name": "嘉欣园", "address": "深圳市龙岗区龙城街道龙红格社区", "longitude": 114.21136, "latitude": 22.71332},
-    {"source_id": "way/544063816:cuhksz-atm-area", "kind": "atm", "name": "中国银行 ATM（港中大深圳上园）", "address": "香港中文大学（深圳）上园服务中心；坐标为上园区域参考点", "longitude": 114.19759, "latitude": 22.69356}
+    {"source_id": "way/544063816:cuhksz-atm-area", "kind": "atm", "name": "中国银行 ATM（港中大深圳上园）", "address": "香港中文大学（深圳）上园服务中心；坐标为上园区域参考点", "longitude": 114.19759, "latitude": 22.69356},
+    {"source_id":"way/533650675:citic-cuhksz-branch-area","kind":"bank","name":"中信银行深圳港中大支行","address":"深圳市龙岗区龙翔大道 2001 号香港中文大学（深圳）校区；坐标为下园区域参考点","longitude":114.20786,"latitude":22.69094}
   ]
 }
