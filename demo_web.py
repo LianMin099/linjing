@@ -8,7 +8,7 @@ from pathlib import Path
 import secrets
 from socketserver import TCPServer
 import sqlite3
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 import webbrowser
 
 from demo_workflow import seed_demo
@@ -25,12 +25,14 @@ NOTICES = {'submitted': '建议已提交。审核通过前，查询仍显示原�
            'open-home': '请使用本页的表单继续。',
            'pilot-only': '管理员登录在真实地点查询页，请运行「打开真实地点查询.cmd」。'}
 ADMIN_COOKIE = 'linjing_admin'
+PLACE_TYPES = {'all': '银行和 ATM', 'bank': '仅银行网点', 'atm': '仅 ATM'}
 FORM_PATHS = ('/correction', '/review', '/login', '/logout')
 
 
-def form_fields(token, radius):
-    return (f'<input type="hidden" name="token" value="{token}">'
-            f'<input type="hidden" name="radius" value="{radius}">')
+def form_fields(token, radius, filters=None):
+    values = dict(token=token, radius=radius, **(filters or {}))
+    return ''.join(f'<input type="hidden" name="{name}" value="{escape(str(value), quote=True)}">'
+                   for name, value in values.items())
 
 
 def correction_history(db, hidden, can_review):
@@ -104,22 +106,40 @@ def parse_radius(value):
     return int(value) if value in tuple(map(str, RADII)) else 1000
 
 
-def pilot_page(db, token, radius, notice, is_admin):
-    community = db.execute("SELECT id, name FROM places WHERE kind = 'community' ORDER BY id LIMIT 1").fetchone()
-    if community is None:
+def pilot_filters(fields):
+    community = fields.get('community', [''])[0]
+    kind = fields.get('kind', ['all'])[0]
+    return {
+        'community': community if community.isascii() and community.isdigit() and len(community) <= 18 else '',
+        'kind': kind if kind in PLACE_TYPES else 'all',
+    }
+
+
+def pilot_page(db, token, radius, notice, is_admin, filters):
+    communities = db.execute("SELECT id, name FROM places WHERE kind = 'community' ORDER BY name, id").fetchall()
+    if not communities:
         return '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><p>数据库里还没有小区记录。</p></html>'
+    community = next((row for row in communities if str(row['id']) == filters['community']), communities[0])
+    kind = filters['kind']
     options = ''.join(f'<option value="{r}"{" selected" if r == radius else ""}>{r} 米</option>' for r in RADII)
-    hidden = form_fields(token, radius)
+    community_options = ''.join(
+        f'<option value="{row["id"]}"{" selected" if row["id"] == community["id"] else ""}>{escape(row["name"])}</option>'
+        for row in communities
+    )
+    kind_options = ''.join(f'<option value="{key}"{" selected" if key == kind else ""}>{label}</option>'
+                           for key, label in PLACE_TYPES.items())
+    hidden = form_fields(token, radius, {'community': community['id'], 'kind': kind})
     results = ''.join(
-        f'<li><strong>{escape(row["name"])}</strong><p>{escape(row["address"])}</p>'
-        f'<p>到上园区域参考点的直线距离约 {row["distance_m"]:.0f} 米 · 版本 {row["version"]}'
+        f'<li><strong>{escape(row["name"])}</strong> · {"ATM" if row["kind"] == "atm" else "银行网点"}'
+        f'<p>{escape(row["address"])}</p>'
+        f'<p>到地点参考坐标的直线距离约 {row["distance_m"]:.0f} 米 · 版本 {row["version"]}'
         f'{" · 本机修订" if row["version"] > 1 else ""}</p>'
         f'<details><summary>提交地址纠错</summary><form method="post" action="/correction">{hidden}'
         f'<input type="hidden" name="place_id" value="{row["id"]}">'
         '<label>建议地址 <input name="address" maxlength="100" required></label> '
         '<label>依据 <input name="reason" maxlength="200" required></label> '
         '<button>提交纠错</button></form></details></li>'
-        for row in nearby_banks(db, community['id'], radius)
+        for row in nearby_banks(db, community['id'], radius) if kind == 'all' or row['kind'] == kind
     )
     message = f'<p class="notice" role="status">{escape(notice)}</p>' if notice else ''
     if is_admin:
@@ -138,7 +158,10 @@ section{{background:white;padding:20px;border-radius:14px;margin-bottom:16px}}se
 details form, li form {{margin:10px 0}} details label {{display:block;margin-bottom:6px}} input {{max-width:100%}}</style>
 <main><header><p>邻境 · 首批真实样本</p><h1>{escape(community['name'])}周边查询</h1></header>
 {message}
-<section><form method="get"><label for="radius">直线范围</label> <select id="radius" name="radius">{options}</select>
+<section><form method="get" action="/">
+<label>小区 <select name="community">{community_options}</select></label>
+<label>直线范围 <select name="radius">{options}</select></label>
+<label>设施类型 <select name="kind">{kind_options}</select></label>
 <button>查附近</button></form>
 {('<ul>' + results + '</ul>') if results else '<p>当前样本在这个范围内没有匹配记录。</p>'}
 <p>ATM 的位置以香港中文大学（深圳）上园区域代表点计算，设备实际位置和开放情况待核实。当前只包含首批样本。</p>
@@ -168,8 +191,8 @@ class DemoHandler(BaseHTTPRequestHandler):
         return session is not None and secrets.compare_digest(
             session.value.encode('utf-8'), self.server.admin_session.encode('ascii'))
 
-    def send_page(self, radius=1000, searched=False, notice='', status=200):
-        content = (pilot_page(self.server.db, self.server.token, radius, notice, self.is_admin()) if self.server.pilot
+    def send_page(self, radius=1000, searched=False, notice='', status=200, filters=None):
+        content = (pilot_page(self.server.db, self.server.token, radius, notice, self.is_admin(), filters or pilot_filters({})) if self.server.pilot
                    else page(self.server.db, self.server.token, radius, searched, notice))
         body = content.encode('utf-8')
         self.send_response(status)
@@ -201,7 +224,7 @@ class DemoHandler(BaseHTTPRequestHandler):
         fields = parse_qs(urlsplit(self.path).query)
         radius = parse_radius(fields.get('radius', ['3000' if self.server.pilot else ''])[0])
         notice = NOTICES.get(fields.get('notice', [''])[0], '')
-        self.send_page(radius, 'radius' in fields, notice)
+        self.send_page(radius, 'radius' in fields, notice, filters=pilot_filters(fields))
 
     def do_POST(self):
         paths = FORM_PATHS if self.server.pilot else ('/correction', '/review')
@@ -210,6 +233,7 @@ class DemoHandler(BaseHTTPRequestHandler):
             return
         cookie = None
         radius = 3000 if self.server.pilot else 1000
+        filters = {}
         try:
             length = int(self.headers.get('Content-Length', '0'))
             if not 0 < length <= 4096:
@@ -220,10 +244,12 @@ class DemoHandler(BaseHTTPRequestHandler):
                 self.send_error(403)
                 return
             radius = parse_radius(fields.get('radius', [''])[0])
+            if self.server.pilot:
+                filters = pilot_filters(fields)
             if self.path == '/login':
                 code = fields.get('code', [''])[0].strip()
                 if not secrets.compare_digest(code.encode('utf-8'), self.server.admin_code.encode('ascii')):
-                    self.send_page(radius, notice='口令不正确，请查看启动窗口。', status=403)
+                    self.send_page(radius, notice='口令不正确，请查看启动窗口。', status=403, filters=filters)
                     return
                 self.server.admin_session = secrets.token_urlsafe(32)
                 cookie = f'{ADMIN_COOKIE}={self.server.admin_session}; Path=/; HttpOnly; SameSite=Strict'
@@ -252,7 +278,7 @@ class DemoHandler(BaseHTTPRequestHandler):
                 notice = 'submitted'
             else:
                 if self.server.pilot and not self.is_admin():
-                    self.send_page(radius, notice='只有管理员可以审核纠错。', status=403)
+                    self.send_page(radius, notice='只有管理员可以审核纠错。', status=403, filters=filters)
                     return
                 decision = fields.get('decision', [''])[0]
                 feedback_id = fields.get('id', [''])[0]
@@ -261,10 +287,10 @@ class DemoHandler(BaseHTTPRequestHandler):
                 review_correction(self.server.db, int(feedback_id), approve=decision == 'approve')
                 notice = 'approved' if decision == 'approve' else 'rejected'
         except ValueError as error:
-            self.send_page(radius, searched=True, notice=str(error), status=400)
+            self.send_page(radius, searched=True, notice=str(error), status=400, filters=filters)
             return
         self.send_response(303)
-        self.send_header('Location', '/?radius={}&notice={}'.format(radius, notice))
+        self.send_header('Location', '/?' + urlencode(dict(radius=radius, notice=notice, **filters)))
         if cookie is not None:
             self.send_header('Set-Cookie', cookie)
         self.end_headers()
