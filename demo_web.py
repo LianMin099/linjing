@@ -21,8 +21,11 @@ NOTICES = {'submitted': '建议已提交。审核通过前，查询仍显示原�
            'approved': '审核通过。查询结果已更新，旧地址仍保留在审核记录中。',
            'rejected': '建议已驳回。查询结果继续显示原地址。',
            'signed-in': '管理员已登录，可以审核待处理的纠错。',
-           'signed-out': '已退出管理员模式。'}
+           'signed-out': '已退出管理员模式。',
+           'open-home': '请使用本页的表单继续。',
+           'pilot-only': '管理员登录在真实地点查询页，请运行「打开真实地点查询.cmd」。'}
 ADMIN_COOKIE = 'linjing_admin'
+FORM_PATHS = ('/correction', '/review', '/login', '/logout')
 
 
 def form_fields(token, radius):
@@ -32,11 +35,14 @@ def form_fields(token, radius):
 
 def correction_history(db, hidden, can_review):
     records = []
+    pending = 0
     for row in db.execute('''
         SELECT corrections.*, places.name FROM corrections
         JOIN places ON places.id = corrections.place_id ORDER BY corrections.id DESC
     '''):
         buttons = ''
+        if row['status'] == 'pending':
+            pending += 1
         if can_review and row['status'] == 'pending':
             buttons = (f'<form method="post" action="/review">{hidden}'
                        f'<input type="hidden" name="id" value="{row["id"]}">'
@@ -45,7 +51,8 @@ def correction_history(db, hidden, can_review):
         records.append(f'<li><strong>{STATUS[row["status"]]}</strong> · {escape(row["name"])}<br>'
                        f'<span>{escape(row["old_address"])} → {escape(row["proposed_address"])}</span><br>'
                        f'<small>依据：{escape(row["reason"])}</small>{buttons}</li>')
-    return '<ul>' + ''.join(records) + '</ul>' if records else '<p>还没有纠错记录。</p>'
+    history = '<ul>' + ''.join(records) + '</ul>' if records else '<p>还没有纠错记录。</p>'
+    return f'<p>待审核：{pending} 条</p>' + history
 
 
 def page(db, token, radius, searched, notice=''):
@@ -114,7 +121,7 @@ def pilot_page(db, token, radius, notice, is_admin):
         '<button>提交纠错</button></form></details></li>'
         for row in nearby_banks(db, community['id'], radius)
     )
-    message = f'<p role="status">{escape(notice)}</p>' if notice else ''
+    message = f'<p class="notice" role="status">{escape(notice)}</p>' if notice else ''
     if is_admin:
         admin_panel = (f'<p>当前身份：管理员</p><form method="post" action="/logout">{hidden}'
                        '<button>退出管理员模式</button></form>')
@@ -127,6 +134,7 @@ def pilot_page(db, token, radius, notice, is_admin):
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>邻境 · 真实样本查询</title>
 <style>body{{max-width:720px;margin:40px auto;padding:0 18px;font:16px/1.6 system-ui,sans-serif;color:#19332d;background:#eef4f2}}
 section{{background:white;padding:20px;border-radius:14px;margin-bottom:16px}}select,button,input{{font:inherit;padding:5px 8px}}a{{color:#135d4c}}
+.notice{{background:#d6e9e2;padding:10px 14px;border-radius:8px}}
 details form, li form {{margin:10px 0}} details label {{display:block;margin-bottom:6px}} input {{max-width:100%}}</style>
 <main><header><p>邻境 · 首批真实样本</p><h1>{escape(community['name'])}周边查询</h1></header>
 {message}
@@ -172,10 +180,22 @@ class DemoHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def valid_host(self):
-        return self.headers.get('Host') == '127.0.0.1:{}'.format(self.server.server_port)
+        port = self.server.server_port
+        return self.headers.get('Host', '').lower() in ('127.0.0.1:{}'.format(port), 'localhost:{}'.format(port))
 
     def do_GET(self):
-        if not self.valid_host() or urlsplit(self.path).path != '/':
+        path = urlsplit(self.path).path
+        if not self.valid_host():
+            self.send_error(404)
+            return
+        if path in FORM_PATHS:
+            notice = 'pilot-only' if path in ('/login', '/logout') and not self.server.pilot else 'open-home'
+            self.send_response(303)
+            self.send_header('Location', '/?notice=' + notice)
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            return
+        if path != '/':
             self.send_error(404)
             return
         fields = parse_qs(urlsplit(self.path).query)
@@ -184,11 +204,12 @@ class DemoHandler(BaseHTTPRequestHandler):
         self.send_page(radius, 'radius' in fields, notice)
 
     def do_POST(self):
-        paths = ('/correction', '/review', '/login', '/logout') if self.server.pilot else ('/correction', '/review')
+        paths = FORM_PATHS if self.server.pilot else ('/correction', '/review')
         if not self.valid_host() or self.path not in paths:
             self.send_error(404)
             return
         cookie = None
+        radius = 3000 if self.server.pilot else 1000
         try:
             length = int(self.headers.get('Content-Length', '0'))
             if not 0 < length <= 4096:
@@ -240,7 +261,7 @@ class DemoHandler(BaseHTTPRequestHandler):
                 review_correction(self.server.db, int(feedback_id), approve=decision == 'approve')
                 notice = 'approved' if decision == 'approve' else 'rejected'
         except ValueError as error:
-            self.send_page(notice=str(error), status=400)
+            self.send_page(radius, searched=True, notice=str(error), status=400)
             return
         self.send_response(303)
         self.send_header('Location', '/?radius={}&notice={}'.format(radius, notice))

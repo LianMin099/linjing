@@ -71,7 +71,9 @@ def submit_address_correction(db, place_id, new_address, reason):
             SELECT id, version, address, ?, ? FROM places WHERE id = ? AND address <> ?
         ''', (address, reason, place_id, address))
         if result.rowcount != 1:
-            raise ValueError('地点不存在或地址没有变化')
+            if db.execute('SELECT 1 FROM places WHERE id = ?', (place_id,)).fetchone() is None:
+                raise ValueError('地点不存在，未提交纠错。')
+            raise ValueError('建议地址和当前地址相同，未生成待审核记录。请填写有改动的地址。')
         return result.lastrowid
 
 
