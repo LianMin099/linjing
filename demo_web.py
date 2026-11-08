@@ -448,19 +448,15 @@ class DemoHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
-def main():
-    parser = argparse.ArgumentParser(description='邻境本机教学演示')
-    parser.add_argument('--open-browser', action='store_true', help='启动后打开默认浏览器')
-    parser.add_argument('--pilot-db', type=Path, help='打开真实样本数据库，持久保存本机纠错')
-    args = parser.parse_args()
-    if args.pilot_db is None:
+def start_server(pilot_db=None, open_browser=False, port=0):
+    if pilot_db is None:
         db = connect(':memory:')
     else:
-        db = sqlite3.connect(args.pilot_db.resolve().as_uri() + '?mode=rw', uri=True)
+        db = sqlite3.connect(pilot_db.resolve().as_uri() + '?mode=rw', uri=True)
         db.row_factory = sqlite3.Row
         db.execute('PRAGMA foreign_keys = ON')
-    with closing(db), LocalDemoServer(('127.0.0.1', 0), DemoHandler) as server:
-        server.pilot = args.pilot_db is not None
+    with closing(db), LocalDemoServer(('127.0.0.1', port), DemoHandler) as server:
+        server.pilot = pilot_db is not None
         if not server.pilot:
             seed_demo(db)
         server.db = db
@@ -471,12 +467,20 @@ def main():
         if server.pilot:
             server.admin_code = secrets.token_urlsafe(12)
             print('本次管理员口令：' + server.admin_code, flush=True)
-        if args.open_browser:
+        if open_browser:
             webbrowser.open(url)
         try:
             server.serve_forever()
         except KeyboardInterrupt:
             pass
+
+
+def main():
+    parser = argparse.ArgumentParser(description='邻境本机教学演示')
+    parser.add_argument('--open-browser', action='store_true', help='启动后打开默认浏览器')
+    parser.add_argument('--pilot-db', type=Path, help='打开真实样本数据库，持久保存本机纠错')
+    args = parser.parse_args()
+    start_server(args.pilot_db, args.open_browser)
 
 
 if __name__ == '__main__':
