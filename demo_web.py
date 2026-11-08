@@ -127,12 +127,14 @@ def location_diagram(community, rows, radius):
         x = center + (row['longitude'] - community['longitude']) * meters_per_degree * longitude_scale * scale
         y = center - (row['latitude'] - community['latitude']) * meters_per_degree * scale
         color = '#1d4ed8' if row['kind'] == 'bank' else '#8b3c13'
-        markers.append(f'<g data-kind="{row["kind"]}"><title>{escape(row["name"])}</title>'
+        name = escape(row['name'], quote=True)
+        markers.append(f'<a href="#place-{row["id"]}" aria-label="查看 {name} 的详情">'
+                       f'<g data-kind="{row["kind"]}"><title>{name}</title>'
                        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="11" fill="{color}"/>'
-                       f'<text x="{x:.1f}" y="{y + 4:.1f}" fill="white">{number}</text></g>')
+                       f'<text x="{x:.1f}" y="{y + 4:.1f}" fill="white">{number}</text></g></a>')
     return f'''
     <figure class="location-diagram">
-      <svg viewBox="0 0 300 300" role="img" aria-labelledby="location-title location-description">
+      <svg viewBox="0 0 300 300" role="group" aria-labelledby="location-title location-description">
         <title id="location-title">相对位置示意图</title>
         <desc id="location-description">以所选小区为中心，上北下南，编号与查询列表对应。</desc>
         <circle cx="150" cy="150" r="122" fill="#eaf5f1" stroke="#7ba89b" stroke-dasharray="4 4"/>
@@ -141,8 +143,36 @@ def location_diagram(community, rows, radius):
         <circle cx="150" cy="150" r="7" fill="#135d4c"/>
         {''.join(markers)}
       </svg>
-      <figcaption>绿点是所选小区，蓝色编号是银行，棕色编号是 ATM。虚线圆表示 {radius:,} 米查询范围。位置来自样本参考坐标，图中不含道路。</figcaption>
+      <figcaption>绿点是所选小区，蓝色编号是银行，棕色编号是 ATM。虚线圆表示 {radius:,} 米查询范围。点编号可查看地点详情。位置来自样本参考坐标，图中不含道路。</figcaption>
     </figure>'''
+
+
+
+def place_sources(reference):
+    """Present the recorded source and distinguish a campus anchor from a facility entrance."""
+    if reference is None:
+        return '<p>坐标来源：暂无可核验记录。</p>'
+    source = reference['source_id'].split(':', 1)[0]
+    object_type, _, number = source.partition('/')
+    if (reference['source_url'] == 'https://www.openstreetmap.org/'
+            and object_type in ('node', 'way', 'relation') and number.isascii() and number.isdigit()):
+        link = f'<a href="https://www.openstreetmap.org/{object_type}/{number}">OpenStreetMap 参考点</a>'
+        evidence = {
+            'way/533650675:citic-cuhksz-branch-area': (
+                '中信银行开业公告',
+                'https://www.citicbank.com/about/companynews/banknew/message/201911/t20191105_82445.html',
+            ),
+            'way/544063816:cuhksz-atm-area': (
+                '校方入住手册',
+                'https://harmonia.cuhk.edu.cn/sites/harmonia.prod.dpsite02.cuhk.edu.cn/files/2023-08/%EF%BC%88%E5%B7%B2%E5%8E%8B%E7%BC%A9%EF%BC%89%E7%A5%A5%E6%B3%A2%E4%B9%A6%E9%99%A2%E5%85%A5%E4%BD%8F%E6%89%8B%E5%86%8C-0815_0.pdf',
+            ),
+        }.get(reference['source_id'])
+        verified = ''
+        if evidence:
+            label, url = evidence
+            verified = f'<p>设施名称依据：<a href="{url}">{label}</a>。当前营业和通行情况待核实。</p>'
+        return f'<p>坐标来源：{link}。直线距离按区域参考点估算，具体入口待核实。</p>{verified}'
+    return f'<p>坐标来源：{escape(reference["source_url"])}</p>'
 
 
 
@@ -161,11 +191,15 @@ def pilot_page(db, token, radius, notice, is_admin, filters):
                            for key, label in PLACE_TYPES.items())
     hidden = form_fields(token, radius, {'community': community['id'], 'kind': kind})
     rows = [row for row in nearby_banks(db, community['id'], radius) if kind == 'all' or row['kind'] == kind]
+    references = {row['place_id']: row for row in db.execute(
+        'SELECT place_id, source_id, source_url FROM place_imports'
+    )} if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='place_imports'").fetchone() else {}
     results = ''.join(
-        f'<li><strong>{number}. {escape(row["name"])}</strong> · {"ATM" if row["kind"] == "atm" else "银行网点"}'
+        f'<li class="place-result" id="place-{row["id"]}" tabindex="-1"><strong>{number}. {escape(row["name"])}</strong> · {"ATM" if row["kind"] == "atm" else "银行网点"}'
         f'<p>{escape(row["address"])}</p>'
         f'<p>到地点参考坐标的直线距离约 {row["distance_m"]:.0f} 米 · 版本 {row["version"]}'
         f'{" · 本机修订" if row["version"] > 1 else ""}</p>'
+        f'{place_sources(references.get(row["id"]))}'
         f'<details><summary>提交地址纠错</summary><form method="post" action="/correction">{hidden}'
         f'<input type="hidden" name="place_id" value="{row["id"]}">'
         '<label>建议地址 <input name="address" maxlength="100" required></label> '
@@ -187,6 +221,8 @@ def pilot_page(db, token, radius, notice, is_admin, filters):
 <style>body{{max-width:720px;margin:40px auto;padding:0 18px;font:16px/1.6 system-ui,sans-serif;color:#19332d;background:#eef4f2}}
 section{{background:white;padding:20px;border-radius:14px;margin-bottom:16px}}select,button,input{{font:inherit;padding:5px 8px}}a{{color:#135d4c}}
 .location-diagram{{margin:14px 0}} .location-diagram svg{{display:block;width:min(100%,320px);margin:auto;text-anchor:middle;font-size:12px}}
+.location-diagram a:focus circle,.location-diagram a:hover circle{{stroke:#162d27;stroke-width:3}}
+.place-result{{padding:8px;scroll-margin-top:18px}} .place-result:target{{background:#d6e9e2;outline:2px solid #135d4c;border-radius:8px}}
 .notice{{background:#d6e9e2;padding:10px 14px;border-radius:8px}}
 details form, li form {{margin:10px 0}} details label {{display:block;margin-bottom:6px}} input {{max-width:100%}}</style>
 <main><header><p>邻境 · 首批真实样本</p><h1>{escape(community['name'])}周边查询</h1></header>
