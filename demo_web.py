@@ -5,6 +5,7 @@ from html import escape
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+import math
 import secrets
 from socketserver import TCPServer
 import sqlite3
@@ -115,8 +116,38 @@ def pilot_filters(fields):
     }
 
 
+def location_diagram(community, rows, radius):
+    """Draw a local, north-up sketch from the same records as the result list."""
+    center = 150
+    scale = 122 / radius
+    meters_per_degree = 111195
+    longitude_scale = math.cos(math.radians(community['latitude']))
+    markers = []
+    for number, row in enumerate(rows, 1):
+        x = center + (row['longitude'] - community['longitude']) * meters_per_degree * longitude_scale * scale
+        y = center - (row['latitude'] - community['latitude']) * meters_per_degree * scale
+        color = '#1d4ed8' if row['kind'] == 'bank' else '#8b3c13'
+        markers.append(f'<g data-kind="{row["kind"]}"><title>{escape(row["name"])}</title>'
+                       f'<circle cx="{x:.1f}" cy="{y:.1f}" r="11" fill="{color}"/>'
+                       f'<text x="{x:.1f}" y="{y + 4:.1f}" fill="white">{number}</text></g>')
+    return f'''
+    <figure class="location-diagram">
+      <svg viewBox="0 0 300 300" role="img" aria-labelledby="location-title location-description">
+        <title id="location-title">相对位置示意图</title>
+        <desc id="location-description">以所选小区为中心，上北下南，编号与查询列表对应。</desc>
+        <circle cx="150" cy="150" r="122" fill="#eaf5f1" stroke="#7ba89b" stroke-dasharray="4 4"/>
+        <path d="M28 150h244 M150 28v244" stroke="#b2cdc5"/>
+        <text x="150" y="19">↑ 北</text>
+        <circle cx="150" cy="150" r="7" fill="#135d4c"/>
+        {''.join(markers)}
+      </svg>
+      <figcaption>绿点是所选小区，蓝色编号是银行，棕色编号是 ATM。虚线圆表示 {radius:,} 米查询范围。位置来自样本参考坐标，图中不含道路。</figcaption>
+    </figure>'''
+
+
+
 def pilot_page(db, token, radius, notice, is_admin, filters):
-    communities = db.execute("SELECT id, name FROM places WHERE kind = 'community' ORDER BY name, id").fetchall()
+    communities = db.execute("SELECT id, name, longitude, latitude FROM places WHERE kind = 'community' ORDER BY name, id").fetchall()
     if not communities:
         return '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><p>数据库里还没有小区记录。</p></html>'
     community = next((row for row in communities if str(row['id']) == filters['community']), communities[0])
@@ -129,8 +160,9 @@ def pilot_page(db, token, radius, notice, is_admin, filters):
     kind_options = ''.join(f'<option value="{key}"{" selected" if key == kind else ""}>{label}</option>'
                            for key, label in PLACE_TYPES.items())
     hidden = form_fields(token, radius, {'community': community['id'], 'kind': kind})
+    rows = [row for row in nearby_banks(db, community['id'], radius) if kind == 'all' or row['kind'] == kind]
     results = ''.join(
-        f'<li><strong>{escape(row["name"])}</strong> · {"ATM" if row["kind"] == "atm" else "银行网点"}'
+        f'<li><strong>{number}. {escape(row["name"])}</strong> · {"ATM" if row["kind"] == "atm" else "银行网点"}'
         f'<p>{escape(row["address"])}</p>'
         f'<p>到地点参考坐标的直线距离约 {row["distance_m"]:.0f} 米 · 版本 {row["version"]}'
         f'{" · 本机修订" if row["version"] > 1 else ""}</p>'
@@ -139,7 +171,7 @@ def pilot_page(db, token, radius, notice, is_admin, filters):
         '<label>建议地址 <input name="address" maxlength="100" required></label> '
         '<label>依据 <input name="reason" maxlength="200" required></label> '
         '<button>提交纠错</button></form></details></li>'
-        for row in nearby_banks(db, community['id'], radius) if kind == 'all' or row['kind'] == kind
+        for number, row in enumerate(rows, 1)
     )
     message = f'<p class="notice" role="status">{escape(notice)}</p>' if notice else ''
     if is_admin:
@@ -154,6 +186,7 @@ def pilot_page(db, token, radius, notice, is_admin, filters):
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>邻境 · 真实样本查询</title>
 <style>body{{max-width:720px;margin:40px auto;padding:0 18px;font:16px/1.6 system-ui,sans-serif;color:#19332d;background:#eef4f2}}
 section{{background:white;padding:20px;border-radius:14px;margin-bottom:16px}}select,button,input{{font:inherit;padding:5px 8px}}a{{color:#135d4c}}
+.location-diagram{{margin:14px 0}} .location-diagram svg{{display:block;width:min(100%,320px);margin:auto;text-anchor:middle;font-size:12px}}
 .notice{{background:#d6e9e2;padding:10px 14px;border-radius:8px}}
 details form, li form {{margin:10px 0}} details label {{display:block;margin-bottom:6px}} input {{max-width:100%}}</style>
 <main><header><p>邻境 · 首批真实样本</p><h1>{escape(community['name'])}周边查询</h1></header>
@@ -163,6 +196,7 @@ details form, li form {{margin:10px 0}} details label {{display:block;margin-bot
 <label>直线范围 <select name="radius">{options}</select></label>
 <label>设施类型 <select name="kind">{kind_options}</select></label>
 <button>查附近</button></form>
+{location_diagram(community, rows, radius)}
 {('<ul>' + results + '</ul>') if results else '<p>当前样本在这个范围内没有匹配记录。</p>'}
 <p>中信银行网点和中国银行 ATM 分别使用港中大（深圳）下园、上园的区域代表点。页面距离为估算，具体入口和开放情况待核实。</p>
 <p>坐标数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors（ODbL）</a></p>
