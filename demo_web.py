@@ -140,7 +140,7 @@ def location_diagram(community, rows, radius):
       <svg viewBox="0 0 300 300" role="group" aria-labelledby="location-title location-description">
         <title id="location-title">相对位置示意图</title>
         <desc id="location-description">以所选小区为中心，上北下南，编号与查询列表对应。</desc>
-        <circle cx="150" cy="150" r="122" fill="#eaf5f1" stroke="#7ba89b" stroke-dasharray="4 4"/>
+        <circle cx="150" cy="150" r="122" fill="#eaf5f1" stroke="#7ba89b" stroke-dasharray="4 4"/><circle cx="150" cy="150" r="61" fill="none" stroke="#b2cdc5" stroke-dasharray="3 4"/>
         <path d="M28 150h244 M150 28v244" stroke="#b2cdc5"/>
         <text x="150" y="19">↑ 北</text>
         <circle cx="150" cy="150" r="7" fill="#135d4c"/>
@@ -181,7 +181,7 @@ def place_sources(reference):
 
 def import_panel(hidden):
     return f"""
-<section><h2>手动导入地点</h2>
+<section class="surface" id="import-panel"><h2>手动导入地点</h2>
 <p>选择已核对来源和使用依据的 JSON 文件。已有来源编号会跳过，保留已审核的修改。</p>
 <form method="post" action="/import">{hidden}
 <label>选择 JSON 文件 <input type="file" id="import-file" accept=".json,application/json"></label>
@@ -231,11 +231,13 @@ def pilot_page(db, token, radius, notice, is_admin, filters):
         'SELECT place_id, source_id, source_url FROM place_imports'
     )} if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='place_imports'").fetchone() else {}
     results = ''.join(
-        f'<li class="place-result" id="place-{row["id"]}" tabindex="-1"><strong>{number}. {escape(row["name"])}</strong> · {"ATM" if row["kind"] == "atm" else "银行网点"}'
+        f'<li class="place-result" id="place-{row["id"]}" tabindex="-1">'
+        f'<div class="place-head"><strong>{number}. {escape(row["name"])}</strong>'
+        f'<span class="place-distance">约 {row["distance_m"]:,.0f} 米</span></div>'
         f'<p>{escape(row["address"])}</p>'
-        f'<p>到地点参考坐标的直线距离约 {row["distance_m"]:.0f} 米 · 版本 {row["version"]}'
-        f'{" · 本机修订" if row["version"] > 1 else ""}</p>'
-        f'{place_sources(references.get(row["id"]))}'
+        f'<div class="place-meta"><span class="badge {row["kind"]}-badge">{"ATM" if row["kind"] == "atm" else "银行网点"}</span>'
+        f'<span class="badge">版本 {row["version"]}{" · 本机修订" if row["version"] > 1 else ""}</span></div>'
+        f'<details><summary>查看来源与核验状态</summary>{place_sources(references.get(row["id"]))}</details>'
         f'<details><summary>提交地址纠错</summary><form method="post" action="/correction">{hidden}'
         f'<input type="hidden" name="place_id" value="{row["id"]}">'
         '<label>建议地址 <input name="address" maxlength="100" required></label> '
@@ -256,49 +258,72 @@ def pilot_page(db, token, radius, notice, is_admin, filters):
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>邻境 · 真实样本查询</title>
 <style>
 *{{box-sizing:border-box}}
-:root{{color-scheme:light;--ink:#173831;--muted:#415e56;--accent:#0c604d;--line:#cbded7;--paper:#fff}}
-body{{margin:0;background:#eef4f2;color:var(--ink);font:16px/1.65 system-ui,"Microsoft YaHei",sans-serif}}
-main{{max-width:1080px;margin:auto;padding:24px 16px 56px}}
-.hero{{padding:clamp(20px,4vw,38px);background:#123c33;color:#fff;border-radius:20px;margin-bottom:18px}}
-.hero h1{{margin:6px 0;font-size:clamp(26px,4vw,40px);line-height:1.25}}
-.hero p{{color:#d5e9e2;margin:0}} .eyebrow{{font-size:.85rem;font-weight:700;letter-spacing:.08em}}
-.hero nav{{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}}
-.hero nav a{{color:white;border:1px solid #92b8ac;padding:4px 12px;border-radius:20px;text-decoration:none}}
-section{{background:var(--paper);border:1px solid var(--line);padding:clamp(16px,3vw,25px);border-radius:16px;margin-bottom:16px}}
-h2,h3,p{{margin:0 0 10px}} h2{{font-size:1.3rem}} h3{{font-size:1rem}}
-a{{color:var(--accent);text-underline-offset:.16em}} small,.muted,figcaption{{color:var(--muted)}}
-.filters{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:10px;align-items:end;margin:12px 0 18px}}
-label{{display:block;min-width:0;font-weight:600}} select,button,input,textarea{{font:inherit;padding:7px 10px;border:1px solid #8da99e;border-radius:8px;max-width:100%}}
+:root{{color-scheme:light;--ink:#172e2b;--muted:#475f59;--teal:#086b57;--line:#d9e6e1;--paper:#fff;--bg:#f1f6f4}}
+body{{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,"Microsoft YaHei",sans-serif}}
+a{{color:var(--teal);text-underline-offset:.18em}} small,.muted,figcaption{{color:var(--muted)}}
+h1,h2,h3,p{{margin:0}} h2{{font-size:1.3rem}} h3{{font-size:1.08rem}}
+.topbar{{background:white;border-bottom:1px solid var(--line)}}
+.topbar-inner{{max-width:1220px;margin:auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}
+.brand{{display:flex;align-items:center;gap:10px;font-size:1.28rem;font-weight:800;letter-spacing:.08em}}
+.brand-mark{{width:34px;height:34px;background:#0e6553;color:white;display:grid;place-items:center;border-radius:10px;font-size:20px;letter-spacing:0}}
+.topbar nav{{display:flex;gap:20px;align-items:center;flex-wrap:wrap}} .topbar nav a{{font-weight:650;text-decoration:none}}
+main{{max-width:1220px;margin:auto;padding:24px 24px 56px}}
+.hero{{position:relative;overflow:hidden;background:#103d36;color:white;border-radius:22px;padding:clamp(24px,5vw,48px);margin-bottom:18px}}
+.hero::after{{content:"";position:absolute;width:310px;height:310px;right:-70px;top:-135px;border:1px solid #559d8a;border-radius:50%;box-shadow:0 0 0 32px #174b40,0 0 0 33px #448774,0 0 0 65px #174b40,0 0 0 66px #396e60;pointer-events:none}}
+.hero-content{{position:relative;z-index:1}} .hero h1{{font-size:clamp(28px,5vw,48px);line-height:1.15;margin:10px 0 12px}}
+.hero p{{color:#d7eae5}} .eyebrow{{font-size:.8rem;font-weight:750;letter-spacing:.1em}}
+.badge{{display:inline-block;padding:3px 9px;border-radius:20px;background:#e3f1eb;color:#185b49;font-size:.82rem;font-weight:650}}
+.hero .badge{{background:#22584c;color:#e5f6ef}}
+.surface{{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:clamp(15px,2.8vw,25px);margin-bottom:16px}}
+.surface>p{{margin:8px 0}} .query-header{{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}}
+.filters{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:12px;align-items:end;margin:14px 0 18px}}
+label{{display:block;font-weight:650;min-width:0}} select,button,input,textarea{{font:inherit;padding:8px 11px;border:1px solid #8aa69d;border-radius:9px;max-width:100%;background:white;color:var(--ink)}}
 .filters select,textarea{{display:block;width:100%;margin-top:4px}}
-button{{background:var(--accent);color:white;border-color:var(--accent);cursor:pointer}}
-button.secondary{{background:white;color:var(--ink);border-color:#8da99e}}
-:focus-visible{{outline:3px solid #166cbd;outline-offset:3px}}
-.query-layout{{display:grid;grid-template-columns:minmax(240px,.85fr) minmax(0,1.15fr);gap:16px;align-items:start}}
-.query-layout>div{{min-width:0}} .location-diagram{{margin:0;padding:12px;background:#f6faf8;border-radius:12px}}
-.location-diagram svg{{display:block;width:min(100%,320px);margin:auto;text-anchor:middle;font-size:12px}}
-.location-diagram a:focus circle,.location-diagram a:hover circle{{stroke:#162d27;stroke-width:3}}
-.results-list{{list-style:none;padding:0;margin:0}} .place-result{{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;overflow-wrap:anywhere;scroll-margin-top:18px}}
-.place-result:target{{background:#e5f1ed;outline:2px solid var(--accent)}}
-.notice{{background:#d6e9e2;padding:10px 14px;border-radius:8px;margin-bottom:16px}}
-details form,li form{{margin:10px 0}} details label{{margin-bottom:6px}} summary{{cursor:pointer;color:var(--accent)}}
-.query-footnote{{border-top:1px solid var(--line);padding-top:12px;margin-top:12px;font-size:.9rem}}
-@media(max-width:680px){{.filters{{grid-template-columns:1fr 1fr}} .query-layout{{grid-template-columns:1fr}}}}
-@media(max-width:380px){{.filters{{grid-template-columns:1fr}}}}
+button{{background:var(--teal);color:white;border-color:var(--teal);font-weight:650;cursor:pointer}}
+button:hover{{background:#075344}} button.secondary{{background:white;color:var(--ink);border-color:#8aa69d}}
+:focus-visible{{outline:3px solid #1269bc;outline-offset:3px}}
+.query-layout{{display:grid;grid-template-columns:minmax(240px,.9fr) minmax(0,1.1fr);gap:18px;align-items:start}}
+.query-layout>div{{min-width:0}} .panel-title{{margin-bottom:10px}}
+.location-diagram{{margin:0;padding:14px;background:#f4faf7;border:1px solid var(--line);border-radius:14px}}
+.location-diagram svg{{display:block;width:min(100%,380px);margin:auto;text-anchor:middle;font-size:12px}}
+.location-diagram a:focus circle,.location-diagram a:hover circle{{stroke:#102a23;stroke-width:3}}
+figcaption{{font-size:.88rem;margin-top:8px}}
+.results-list{{list-style:none;margin:0;padding:0;display:grid;gap:10px}}
+.place-result{{border:1px solid var(--line);border-radius:14px;padding:15px;overflow-wrap:anywhere;scroll-margin-top:15px}}
+.place-result:target{{background:#eff8f4;outline:2px solid var(--teal)}}
+.place-head{{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px}}
+.place-head strong{{font-size:1rem}} .place-distance{{white-space:nowrap;font-weight:800;color:var(--teal)}}
+.place-meta{{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}}
+.bank-badge{{background:#e9f0ff;color:#214b99}} .atm-badge{{background:#fff0df;color:#814518}}
+.notice,.empty{{background:#e2f2ea;border-radius:10px;padding:12px 14px;margin-bottom:16px}}
+details{{margin-top:10px}} summary{{cursor:pointer;color:var(--teal);font-weight:650}}
+details p,details form,li form{{margin:8px 0}} details label{{margin-bottom:8px}} details input:not([type=hidden]){{display:block;width:100%;margin-top:3px}}
+.query-footnote{{border-top:1px solid var(--line);padding-top:12px;margin-top:14px;font-size:.88rem}}
+@media(max-width:740px){{main{{padding:16px 12px 40px}} .topbar-inner{{padding:12px}} .filters{{grid-template-columns:1fr 1fr}} .query-layout{{grid-template-columns:1fr}}}}
+@media(max-width:420px){{.filters{{grid-template-columns:1fr}} .place-head{{flex-wrap:wrap}} .hero::after{{opacity:.45}}}}
 </style>
-<main><header class="hero"><p class="eyebrow">邻境 · 大运片区试点</p><h1>{escape(community['name'])}周边查询</h1><p>查找附近银行与 ATM，核对地点来源，也可以提交地址纠错。</p><nav aria-label="页面导航"><a href="#query">周边查询</a><a href="#review">纠错与审核</a></nav></header>
+<header class="topbar"><div class="topbar-inner">
+  <span class="brand"><span class="brand-mark" aria-hidden="true">邻</span>邻境</span>
+  <nav aria-label="页面导航"><a href="#query">周边查询</a><a href="#review">纠错与审核</a>
+  {'<a href="#import-panel">导入地点</a>' if is_admin else ''}
+  <span class="badge">{'管理员' if is_admin else '访客'}</span></nav>
+</div></header>
+<main><header class="hero"><div class="hero-content"><span class="badge eyebrow">深圳 · 大运片区试点</span>
+<h1>{escape(community['name'])}周边查询</h1><p>按距离查找银行和 ATM，查看数据来源，反馈地点信息有误。</p></div></header>
 {message}
-<section id="query"><h2>查附近</h2><form class="filters" method="get" action="/">
+<section class="surface" id="query"><div class="query-header"><h2>查附近</h2><span class="badge">直线范围 · {radius:,} 米</span></div>
+<form class="filters" method="get" action="/">
 <label>小区 <select name="community">{community_options}</select></label>
 <label>直线范围 <select name="radius">{options}</select></label>
 <label>设施类型 <select name="kind">{kind_options}</select></label>
 <button>查附近</button></form>
-<div class="query-layout"><div><h3>相对位置</h3>{location_diagram(community, rows, radius)}</div>
-<div><h3>查询结果 · {len(rows)} 条</h3>
-{('<ul class="results-list">' + results + '</ul>') if results else '<p class="muted">当前样本在这个范围内没有匹配记录。可试试更大的范围或切换设施类型。</p>'}
+<div class="query-layout"><div><h3 class="panel-title">位置示意图</h3>{location_diagram(community, rows, radius)}</div>
+<div><h3 class="panel-title">查询结果 · {len(rows)} 条</h3>
+{('<ul class="results-list">' + results + '</ul>') if results else '<p class="empty">当前样本在这个范围内没有匹配记录。可试试更大的范围或切换设施类型。</p>'}
 </div></div>
 <div class="query-footnote muted"><p>中信银行网点和中国银行 ATM 分别使用港中大（深圳）下园、上园的区域代表点。页面距离为估算，具体入口和开放情况待核实。</p>
 <p>坐标数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors（ODbL）</a></p></div>
-</section><section id="review"><h2>纠错与审核</h2>{admin_panel}
+</section><section class="surface" id="review"><h2>纠错与审核</h2>{admin_panel}
 <p>修改保存在这台电脑的样本数据库中。原始来源和坐标继续保留。</p>
 {correction_history(db, hidden, can_review=is_admin)}</section>{import_panel(hidden) if is_admin else ""}</main></html>'''
 
