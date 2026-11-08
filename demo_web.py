@@ -13,6 +13,7 @@ import sqlite3
 from urllib.parse import parse_qs, urlencode, urlsplit
 import webbrowser
 
+from ui_assets import PILOT_CSS, CITY_ART, icon
 from demo_workflow import seed_demo
 from import_places import import_dataset, validate_dataset
 from linjing_db import connect, nearby_banks, review_correction, submit_address_correction
@@ -129,7 +130,7 @@ def location_diagram(community, rows, radius):
     for number, row in enumerate(rows, 1):
         x = center + (row['longitude'] - community['longitude']) * meters_per_degree * longitude_scale * scale
         y = center - (row['latitude'] - community['latitude']) * meters_per_degree * scale
-        color = '#1d4ed8' if row['kind'] == 'bank' else '#8b3c13'
+        color = '#8871cd' if row['kind'] == 'bank' else '#c99c5d'
         name = escape(row['name'], quote=True)
         markers.append(f'<a href="#place-{row["id"]}" aria-label="查看 {name} 的详情">'
                        f'<g data-kind="{row["kind"]}"><title>{name}</title>'
@@ -140,13 +141,13 @@ def location_diagram(community, rows, radius):
       <svg viewBox="0 0 300 300" role="group" aria-labelledby="location-title location-description">
         <title id="location-title">相对位置示意图</title>
         <desc id="location-description">以所选小区为中心，上北下南，编号与查询列表对应。</desc>
-        <circle cx="150" cy="150" r="122" fill="#eaf5f1" stroke="#7ba89b" stroke-dasharray="4 4"/><circle cx="150" cy="150" r="61" fill="none" stroke="#b2cdc5" stroke-dasharray="3 4"/>
-        <path d="M28 150h244 M150 28v244" stroke="#b2cdc5"/>
+        <circle cx="150" cy="150" r="122" fill="#eeebfa" stroke="#b7a4dc" stroke-dasharray="4 4"/><circle cx="150" cy="150" r="61" fill="none" stroke="#d6cbea" stroke-dasharray="3 4"/>
+        <path d="M28 150h244 M150 28v244" stroke="#d6cbea"/>
         <text x="150" y="19">↑ 北</text>
-        <circle cx="150" cy="150" r="7" fill="#135d4c"/>
+        <circle cx="150" cy="150" r="7" fill="#7da58c"/>
         {''.join(markers)}
       </svg>
-      <figcaption>绿点是所选小区，蓝色编号是银行，棕色编号是 ATM。虚线圆表示 {radius:,} 米查询范围。点编号可查看地点详情。位置来自样本参考坐标，图中不含道路。</figcaption>
+      <figcaption>中心绿点为小区，紫色为银行，金色为 ATM。虚线圆表示 {radius:,} 米查询范围。点编号可查看地点详情。位置来自样本参考坐标，图中不含道路。</figcaption>
     </figure>'''
 
 
@@ -232,9 +233,10 @@ def pilot_page(db, token, radius, notice, is_admin, filters):
     )} if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='place_imports'").fetchone() else {}
     results = ''.join(
         f'<li class="place-result" id="place-{row["id"]}" tabindex="-1">'
-        f'<div class="place-head"><strong>{number}. {escape(row["name"])}</strong>'
-        f'<span class="place-distance">约 {row["distance_m"]:,.0f} 米</span></div>'
-        f'<p>{escape(row["address"])}</p>'
+        f'<div class="place-head"><span class="place-symbol {row["kind"]}">{icon("bank")}</span>'
+        f'<div class="place-title"><strong>{escape(row["name"])}</strong><div class="place-type">地点 {number:02d} · {"ATM 自助设备" if row["kind"] == "atm" else "银行服务网点"}</div></div>'
+        f'<span class="place-distance">{row["distance_m"] / 1000:.2f}<small>公里 · 直线估算</small></span></div>'
+        f'<p class="place-address">{escape(row["address"])}</p>'
         f'<div class="place-meta"><span class="badge {row["kind"]}-badge">{"ATM" if row["kind"] == "atm" else "银行网点"}</span>'
         f'<span class="badge">版本 {row["version"]}{" · 本机修订" if row["version"] > 1 else ""}</span></div>'
         f'<details><summary>查看来源与核验状态</summary>{place_sources(references.get(row["id"]))}</details>'
@@ -256,76 +258,22 @@ def pilot_page(db, token, radius, notice, is_admin, filters):
                        '<button>管理员登录</button></form><small>口令显示在本机启动窗口。</small>')
     return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>邻境 · 真实样本查询</title>
-<style>
-*{{box-sizing:border-box}}
-:root{{color-scheme:light;--ink:#172e2b;--muted:#475f59;--teal:#086b57;--line:#d9e6e1;--paper:#fff;--bg:#f1f6f4}}
-body{{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,"Microsoft YaHei",sans-serif}}
-a{{color:var(--teal);text-underline-offset:.18em}} small,.muted,figcaption{{color:var(--muted)}}
-h1,h2,h3,p{{margin:0}} h2{{font-size:1.3rem}} h3{{font-size:1.08rem}}
-.topbar{{background:white;border-bottom:1px solid var(--line)}}
-.topbar-inner{{max-width:1220px;margin:auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}
-.brand{{display:flex;align-items:center;gap:10px;font-size:1.28rem;font-weight:800;letter-spacing:.08em}}
-.brand-mark{{width:34px;height:34px;background:#0e6553;color:white;display:grid;place-items:center;border-radius:10px;font-size:20px;letter-spacing:0}}
-.topbar nav{{display:flex;gap:20px;align-items:center;flex-wrap:wrap}} .topbar nav a{{font-weight:650;text-decoration:none}}
-main{{max-width:1220px;margin:auto;padding:24px 24px 56px}}
-.hero{{position:relative;overflow:hidden;background:#103d36;color:white;border-radius:22px;padding:clamp(24px,5vw,48px);margin-bottom:18px}}
-.hero::after{{content:"";position:absolute;width:310px;height:310px;right:-70px;top:-135px;border:1px solid #559d8a;border-radius:50%;box-shadow:0 0 0 32px #174b40,0 0 0 33px #448774,0 0 0 65px #174b40,0 0 0 66px #396e60;pointer-events:none}}
-.hero-content{{position:relative;z-index:1}} .hero h1{{font-size:clamp(28px,5vw,48px);line-height:1.15;margin:10px 0 12px}}
-.hero p{{color:#d7eae5}} .eyebrow{{font-size:.8rem;font-weight:750;letter-spacing:.1em}}
-.badge{{display:inline-block;padding:3px 9px;border-radius:20px;background:#e3f1eb;color:#185b49;font-size:.82rem;font-weight:650}}
-.hero .badge{{background:#22584c;color:#e5f6ef}}
-.surface{{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:clamp(15px,2.8vw,25px);margin-bottom:16px}}
-.surface>p{{margin:8px 0}} .query-header{{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}}
-.filters{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:12px;align-items:end;margin:14px 0 18px}}
-label{{display:block;font-weight:650;min-width:0}} select,button,input,textarea{{font:inherit;padding:8px 11px;border:1px solid #8aa69d;border-radius:9px;max-width:100%;background:white;color:var(--ink)}}
-.filters select,textarea{{display:block;width:100%;margin-top:4px}}
-button{{background:var(--teal);color:white;border-color:var(--teal);font-weight:650;cursor:pointer}}
-button:hover{{background:#075344}} button.secondary{{background:white;color:var(--ink);border-color:#8aa69d}}
-:focus-visible{{outline:3px solid #1269bc;outline-offset:3px}}
-.query-layout{{display:grid;grid-template-columns:minmax(240px,.9fr) minmax(0,1.1fr);gap:18px;align-items:start}}
-.query-layout>div{{min-width:0}} .panel-title{{margin-bottom:10px}}
-.location-diagram{{margin:0;padding:14px;background:#f4faf7;border:1px solid var(--line);border-radius:14px}}
-.location-diagram svg{{display:block;width:min(100%,380px);margin:auto;text-anchor:middle;font-size:12px}}
-.location-diagram a:focus circle,.location-diagram a:hover circle{{stroke:#102a23;stroke-width:3}}
-figcaption{{font-size:.88rem;margin-top:8px}}
-.results-list{{list-style:none;margin:0;padding:0;display:grid;gap:10px}}
-.place-result{{border:1px solid var(--line);border-radius:14px;padding:15px;overflow-wrap:anywhere;scroll-margin-top:15px}}
-.place-result:target{{background:#eff8f4;outline:2px solid var(--teal)}}
-.place-head{{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px}}
-.place-head strong{{font-size:1rem}} .place-distance{{white-space:nowrap;font-weight:800;color:var(--teal)}}
-.place-meta{{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}}
-.bank-badge{{background:#e9f0ff;color:#214b99}} .atm-badge{{background:#fff0df;color:#814518}}
-.notice,.empty{{background:#e2f2ea;border-radius:10px;padding:12px 14px;margin-bottom:16px}}
-details{{margin-top:10px}} summary{{cursor:pointer;color:var(--teal);font-weight:650}}
-details p,details form,li form{{margin:8px 0}} details label{{margin-bottom:8px}} details input:not([type=hidden]){{display:block;width:100%;margin-top:3px}}
-.query-footnote{{border-top:1px solid var(--line);padding-top:12px;margin-top:14px;font-size:.88rem}}
-@media(max-width:740px){{main{{padding:16px 12px 40px}} .topbar-inner{{padding:12px}} .filters{{grid-template-columns:1fr 1fr}} .query-layout{{grid-template-columns:1fr}}}}
-@media(max-width:420px){{.filters{{grid-template-columns:1fr}} .place-head{{flex-wrap:wrap}} .hero::after{{opacity:.45}}}}
-</style>
-<header class="topbar"><div class="topbar-inner">
-  <span class="brand"><span class="brand-mark" aria-hidden="true">邻</span>邻境</span>
-  <nav aria-label="页面导航"><a href="#query">周边查询</a><a href="#review">纠错与审核</a>
-  {'<a href="#import-panel">导入地点</a>' if is_admin else ''}
-  <span class="badge">{'管理员' if is_admin else '访客'}</span></nav>
-</div></header>
-<main><header class="hero"><div class="hero-content"><span class="badge eyebrow">深圳 · 大运片区试点</span>
-<h1>{escape(community['name'])}周边查询</h1><p>按距离查找银行和 ATM，查看数据来源，反馈地点信息有误。</p></div></header>
+<style>{PILOT_CSS}</style>
+<aside class="sidebar"><a class="brand" href="/" aria-label="邻境首页"><span class="brand-mark">{icon('pin')}</span><span class="brand-text"><strong>邻境</strong><small>LINJING</small></span></a>
+<p class="nav-label">WORKSPACE</p><nav aria-label="页面导航"><a class="nav-link active" href="#query" aria-label="探索周边">{icon('compass')}<span class="nav-text">探索周边</span></a><a class="nav-link" href="#review" aria-label="纠错与反馈">{icon('edit')}<span class="nav-text">纠错与反馈</span></a><a class="nav-link" href="#admin" aria-label="管理工作台">{icon('shield')}<span class="nav-text">管理工作台</span></a></nav>
+<div class="sidebar-note">{icon('pin')}<strong>从校园，走向周边</strong>深圳信息职业技术大学<br>周边 3 公里 · 试点探索</div></aside>
+<div class="workspace"><header class="topbar"><div class="breadcrumb">邻境工作台 <b>／ &nbsp; 探索周边</b></div><div class="user-pill"><span class="avatar">{icon('shield') if is_admin else icon('grid')}</span>{'管理员模式' if is_admin else '访客模式'}</div></header>
+<main><div class="page-heading"><div><h1>探索周边</h1><p>让身边的信息，更近一步。</p></div><span class="local-tag"><span class="status-dot"></span>本地试点 · 深圳龙岗</span></div>
+<section class="hero"><div class="hero-copy"><div class="eyebrow">A LITTLE CLOSER TO YOUR NEIGHBORHOOD</div><h2>熟悉一座城，<br>从<em>身边的每一处</em>开始。</h2><p>发现小区附近的银行与 ATM，让每次出发都有据可依。</p><a class="hero-link" href="#query">探索我的周边 {icon('arrow')}</a></div>{CITY_ART}</section>
 {message}
-<section class="surface" id="query"><div class="query-header"><h2>查附近</h2><span class="badge">直线范围 · {radius:,} 米</span></div>
-<form class="filters" method="get" action="/">
-<label>小区 <select name="community">{community_options}</select></label>
-<label>直线范围 <select name="radius">{options}</select></label>
-<label>设施类型 <select name="kind">{kind_options}</select></label>
-<button>查附近</button></form>
-<div class="query-layout"><div><h3 class="panel-title">位置示意图</h3>{location_diagram(community, rows, radius)}</div>
-<div><h3 class="panel-title">查询结果 · {len(rows)} 条</h3>
-{('<ul class="results-list">' + results + '</ul>') if results else '<p class="empty">当前样本在这个范围内没有匹配记录。可试试更大的范围或切换设施类型。</p>'}
-</div></div>
-<div class="query-footnote muted"><p>中信银行网点和中国银行 ATM 分别使用港中大（深圳）下园、上园的区域代表点。页面距离为估算，具体入口和开放情况待核实。</p>
-<p>坐标数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors（ODbL）</a></p></div>
-</section><section class="surface" id="review"><h2>纠错与审核</h2>{admin_panel}
-<p>修改保存在这台电脑的样本数据库中。原始来源和坐标继续保留。</p>
-{correction_history(db, hidden, can_review=is_admin)}</section>{import_panel(hidden) if is_admin else ""}</main></html>'''
+<section class="surface" id="query"><div class="query-header"><h2 class="section-label">{icon('search')} 发现附近</h2><span class="subtle-label">选择一个小区，开启周边探索</span></div>
+<form class="filters" method="get" action="/"><label>所在小区<select name="community">{community_options}</select></label><label>探索范围<select name="radius">{options}</select></label><label>设施类型<select name="kind">{kind_options}</select></label><button>{icon('search')}查附近</button></form></section>
+<div class="query-layout"><div class="map-panel"><div class="panel-heading"><h3 class="section-label">{icon('compass')} 周边分布</h3><small>相对位置示意</small></div><div class="map-shell"><span class="map-label">{escape(community['name'])} · {radius:,} m</span>{location_diagram(community, rows, radius)}</div><div class="map-legend"><span><i class="legend-dot" style="background:#7da58c"></i>所选小区</span><span><i class="legend-dot" style="background:#8871cd"></i>银行网点</span><span><i class="legend-dot" style="background:#c99c5d"></i>ATM</span></div></div>
+<div><div class="panel-heading"><h3>探索结果 <span class="count">{len(rows):02d}</span></h3><small>按直线距离排序</small></div>
+{('<ul class="results-list">' + results + '</ul>') if results else '<div class="empty">' + icon('search') + '<strong>附近还没有匹配的样本</strong><p>试试扩大探索范围，或选择其他设施类型。</p></div>'}
+</div></div><div class="query-footnote"><p>中信银行网点和中国银行 ATM 分别使用港中大（深圳）下园、上园的区域代表点。距离为估算，具体入口和开放情况待核实；位置示意图不含道路。</p><p>坐标数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors（ODbL）</a></p></div>
+<section class="surface" id="review"><div class="review-heading"><div><h2 class="section-label">{icon('edit')} 一起，让信息更准确</h2><p>发现地址有误？在地点卡片中提交纠错，审核结果会显示在这里。</p></div>{'<a class="hero-link" href="#import-panel">导入地点 →</a>' if is_admin else ''}</div><div class="review-body"><div class="admin-box" id="admin"><h3>管理工作台</h3>{admin_panel}</div><div class="history-box"><h3>反馈动态</h3>{correction_history(db, hidden, can_review=is_admin)}</div></div></section>{import_panel(hidden) if is_admin else ''}
+<footer class="footer"><span>邻境 LINJING · 发现身边，连接生活</span><span>本地试点版本 · 修改保存在本机数据库</span></footer></main></div></html>'''
 
 
 class LocalDemoServer(HTTPServer):
