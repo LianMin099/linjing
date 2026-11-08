@@ -254,25 +254,51 @@ def pilot_page(db, token, radius, notice, is_admin, filters):
                        '<button>管理员登录</button></form><small>口令显示在本机启动窗口。</small>')
     return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>邻境 · 真实样本查询</title>
-<style>body{{max-width:720px;margin:40px auto;padding:0 18px;font:16px/1.6 system-ui,sans-serif;color:#19332d;background:#eef4f2}}
-section{{background:white;padding:20px;border-radius:14px;margin-bottom:16px}}select,button,input{{font:inherit;padding:5px 8px}}a{{color:#135d4c}}
-.location-diagram{{margin:14px 0}} .location-diagram svg{{display:block;width:min(100%,320px);margin:auto;text-anchor:middle;font-size:12px}}
+<style>
+*{{box-sizing:border-box}}
+:root{{color-scheme:light;--ink:#173831;--muted:#415e56;--accent:#0c604d;--line:#cbded7;--paper:#fff}}
+body{{margin:0;background:#eef4f2;color:var(--ink);font:16px/1.65 system-ui,"Microsoft YaHei",sans-serif}}
+main{{max-width:1080px;margin:auto;padding:24px 16px 56px}}
+.hero{{padding:clamp(20px,4vw,38px);background:#123c33;color:#fff;border-radius:20px;margin-bottom:18px}}
+.hero h1{{margin:6px 0;font-size:clamp(26px,4vw,40px);line-height:1.25}}
+.hero p{{color:#d5e9e2;margin:0}} .eyebrow{{font-size:.85rem;font-weight:700;letter-spacing:.08em}}
+.hero nav{{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}}
+.hero nav a{{color:white;border:1px solid #92b8ac;padding:4px 12px;border-radius:20px;text-decoration:none}}
+section{{background:var(--paper);border:1px solid var(--line);padding:clamp(16px,3vw,25px);border-radius:16px;margin-bottom:16px}}
+h2,h3,p{{margin:0 0 10px}} h2{{font-size:1.3rem}} h3{{font-size:1rem}}
+a{{color:var(--accent);text-underline-offset:.16em}} small,.muted,figcaption{{color:var(--muted)}}
+.filters{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:10px;align-items:end;margin:12px 0 18px}}
+label{{display:block;min-width:0;font-weight:600}} select,button,input,textarea{{font:inherit;padding:7px 10px;border:1px solid #8da99e;border-radius:8px;max-width:100%}}
+.filters select,textarea{{display:block;width:100%;margin-top:4px}}
+button{{background:var(--accent);color:white;border-color:var(--accent);cursor:pointer}}
+button.secondary{{background:white;color:var(--ink);border-color:#8da99e}}
+:focus-visible{{outline:3px solid #166cbd;outline-offset:3px}}
+.query-layout{{display:grid;grid-template-columns:minmax(240px,.85fr) minmax(0,1.15fr);gap:16px;align-items:start}}
+.query-layout>div{{min-width:0}} .location-diagram{{margin:0;padding:12px;background:#f6faf8;border-radius:12px}}
+.location-diagram svg{{display:block;width:min(100%,320px);margin:auto;text-anchor:middle;font-size:12px}}
 .location-diagram a:focus circle,.location-diagram a:hover circle{{stroke:#162d27;stroke-width:3}}
-.place-result{{padding:8px;scroll-margin-top:18px}} .place-result:target{{background:#d6e9e2;outline:2px solid #135d4c;border-radius:8px}}
-.notice{{background:#d6e9e2;padding:10px 14px;border-radius:8px}}
-details form, li form {{margin:10px 0}} details label {{display:block;margin-bottom:6px}} input {{max-width:100%}} textarea {{display:block;width:100%;box-sizing:border-box;font:inherit;margin:6px 0}}</style>
-<main><header><p>邻境 · 首批真实样本</p><h1>{escape(community['name'])}周边查询</h1></header>
+.results-list{{list-style:none;padding:0;margin:0}} .place-result{{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;overflow-wrap:anywhere;scroll-margin-top:18px}}
+.place-result:target{{background:#e5f1ed;outline:2px solid var(--accent)}}
+.notice{{background:#d6e9e2;padding:10px 14px;border-radius:8px;margin-bottom:16px}}
+details form,li form{{margin:10px 0}} details label{{margin-bottom:6px}} summary{{cursor:pointer;color:var(--accent)}}
+.query-footnote{{border-top:1px solid var(--line);padding-top:12px;margin-top:12px;font-size:.9rem}}
+@media(max-width:680px){{.filters{{grid-template-columns:1fr 1fr}} .query-layout{{grid-template-columns:1fr}}}}
+@media(max-width:380px){{.filters{{grid-template-columns:1fr}}}}
+</style>
+<main><header class="hero"><p class="eyebrow">邻境 · 大运片区试点</p><h1>{escape(community['name'])}周边查询</h1><p>查找附近银行与 ATM，核对地点来源，也可以提交地址纠错。</p><nav aria-label="页面导航"><a href="#query">周边查询</a><a href="#review">纠错与审核</a></nav></header>
 {message}
-<section><form method="get" action="/">
+<section id="query"><h2>查附近</h2><form class="filters" method="get" action="/">
 <label>小区 <select name="community">{community_options}</select></label>
 <label>直线范围 <select name="radius">{options}</select></label>
 <label>设施类型 <select name="kind">{kind_options}</select></label>
 <button>查附近</button></form>
-{location_diagram(community, rows, radius)}
-{('<ul>' + results + '</ul>') if results else '<p>当前样本在这个范围内没有匹配记录。</p>'}
-<p>中信银行网点和中国银行 ATM 分别使用港中大（深圳）下园、上园的区域代表点。页面距离为估算，具体入口和开放情况待核实。</p>
-<p>坐标数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors（ODbL）</a></p>
-</section><section><h2>本机审核</h2>{admin_panel}
+<div class="query-layout"><div><h3>相对位置</h3>{location_diagram(community, rows, radius)}</div>
+<div><h3>查询结果 · {len(rows)} 条</h3>
+{('<ul class="results-list">' + results + '</ul>') if results else '<p class="muted">当前样本在这个范围内没有匹配记录。可试试更大的范围或切换设施类型。</p>'}
+</div></div>
+<div class="query-footnote muted"><p>中信银行网点和中国银行 ATM 分别使用港中大（深圳）下园、上园的区域代表点。页面距离为估算，具体入口和开放情况待核实。</p>
+<p>坐标数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors（ODbL）</a></p></div>
+</section><section id="review"><h2>纠错与审核</h2>{admin_panel}
 <p>修改保存在这台电脑的样本数据库中。原始来源和坐标继续保留。</p>
 {correction_history(db, hidden, can_review=is_admin)}</section>{import_panel(hidden) if is_admin else ""}</main></html>'''
 
