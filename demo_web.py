@@ -5,6 +5,7 @@ from html import escape
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+import json
 import math
 import secrets
 from socketserver import TCPServer
@@ -13,6 +14,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 import webbrowser
 
 from demo_workflow import seed_demo
+from import_places import import_dataset, validate_dataset
 from linjing_db import connect, nearby_banks, review_correction, submit_address_correction
 
 
@@ -27,7 +29,8 @@ NOTICES = {'submitted': '建议已提交。审核通过前，查询仍显示原�
            'pilot-only': '管理员登录在真实地点查询页，请运行「打开真实地点查询.cmd」。'}
 ADMIN_COOKIE = 'linjing_admin'
 PLACE_TYPES = {'all': '银行和 ATM', 'bank': '仅银行网点', 'atm': '仅 ATM'}
-FORM_PATHS = ('/correction', '/review', '/login', '/logout')
+FORM_PATHS = ('/correction', '/review', '/login', '/logout', '/import')
+MAX_IMPORT_BYTES = 65536
 
 
 def form_fields(token, radius, filters=None):
@@ -176,6 +179,39 @@ def place_sources(reference):
 
 
 
+def import_panel(hidden):
+    return f"""
+<section><h2>手动导入地点</h2>
+<p>选择已核对来源和使用依据的 JSON 文件。已有来源编号会跳过，保留已审核的修改。</p>
+<form method="post" action="/import">{hidden}
+<label>选择 JSON 文件 <input type="file" id="import-file" accept=".json,application/json"></label>
+<label for="import-data">文件内容（也可以直接粘贴）</label>
+<textarea id="import-data" name="dataset" rows="4" required></textarea>
+<p id="import-feedback" role="status"></p>
+<button>校验并导入</button></form>
+<script>
+document.getElementById("import-file").addEventListener("change", async (event) => {{
+  const file = event.target.files[0];
+  const input = document.getElementById("import-data");
+  const feedback = document.getElementById("import-feedback");
+  input.value = "";
+  feedback.textContent = "";
+  if (!file) return;
+  if (file.size > {MAX_IMPORT_BYTES}) {{
+    feedback.textContent = "文件超过 64 KB，请分批导入。";
+    return;
+  }}
+  try {{
+    const text = await file.text();
+    if (event.target.files[0] === file) input.value = text;
+  }} catch {{
+    feedback.textContent = "无法读取文件，请重选或粘贴内容。";
+  }}
+}});
+</script></section>"""
+
+
+
 def pilot_page(db, token, radius, notice, is_admin, filters):
     communities = db.execute("SELECT id, name, longitude, latitude FROM places WHERE kind = 'community' ORDER BY name, id").fetchall()
     if not communities:
@@ -224,7 +260,7 @@ section{{background:white;padding:20px;border-radius:14px;margin-bottom:16px}}se
 .location-diagram a:focus circle,.location-diagram a:hover circle{{stroke:#162d27;stroke-width:3}}
 .place-result{{padding:8px;scroll-margin-top:18px}} .place-result:target{{background:#d6e9e2;outline:2px solid #135d4c;border-radius:8px}}
 .notice{{background:#d6e9e2;padding:10px 14px;border-radius:8px}}
-details form, li form {{margin:10px 0}} details label {{display:block;margin-bottom:6px}} input {{max-width:100%}}</style>
+details form, li form {{margin:10px 0}} details label {{display:block;margin-bottom:6px}} input {{max-width:100%}} textarea {{display:block;width:100%;box-sizing:border-box;font:inherit;margin:6px 0}}</style>
 <main><header><p>邻境 · 首批真实样本</p><h1>{escape(community['name'])}周边查询</h1></header>
 {message}
 <section><form method="get" action="/">
@@ -238,7 +274,7 @@ details form, li form {{margin:10px 0}} details label {{display:block;margin-bot
 <p>坐标数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors（ODbL）</a></p>
 </section><section><h2>本机审核</h2>{admin_panel}
 <p>修改保存在这台电脑的样本数据库中。原始来源和坐标继续保留。</p>
-{correction_history(db, hidden, can_review=is_admin)}</section></main></html>'''
+{correction_history(db, hidden, can_review=is_admin)}</section>{import_panel(hidden) if is_admin else ""}</main></html>'''
 
 
 class LocalDemoServer(HTTPServer):
@@ -282,7 +318,7 @@ class DemoHandler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         if path in FORM_PATHS:
-            notice = 'pilot-only' if path in ('/login', '/logout') and not self.server.pilot else 'open-home'
+            notice = 'pilot-only' if path in ('/login', '/logout', '/import') and not self.server.pilot else 'open-home'
             self.send_response(303)
             self.send_header('Location', '/?notice=' + notice)
             self.send_header('Cache-Control', 'no-store')
@@ -301,12 +337,16 @@ class DemoHandler(BaseHTTPRequestHandler):
         if not self.valid_host() or self.path not in paths:
             self.send_error(404)
             return
+        if self.path == '/import' and not self.is_admin():
+            self.send_error(403)
+            return
         cookie = None
         radius = 3000 if self.server.pilot else 1000
         filters = {}
         try:
             length = int(self.headers.get('Content-Length', '0'))
-            if not 0 < length <= 4096:
+            max_length = MAX_IMPORT_BYTES * 3 + 4096 if self.path == '/import' else 4096
+            if not 0 < length <= max_length:
                 raise ValueError('表单内容超出限制。')
             fields = parse_qs(self.rfile.read(length).decode('utf-8'), keep_blank_values=True, max_num_fields=8)
             token = fields.get('token', [''])[0]
@@ -316,6 +356,19 @@ class DemoHandler(BaseHTTPRequestHandler):
             radius = parse_radius(fields.get('radius', [''])[0])
             if self.server.pilot:
                 filters = pilot_filters(fields)
+            if self.path == '/import':
+                raw = fields.get('dataset', [''])[0]
+                if len(raw.encode('utf-8')) > MAX_IMPORT_BYTES:
+                    raise ValueError('文件超过 64 KB，请分批导入。')
+                try:
+                    dataset = json.loads(raw.lstrip('\ufeff'))
+                except (ValueError, RecursionError) as error:
+                    raise ValueError('文件不是有效的 JSON。') from error
+                metadata, rows = validate_dataset(dataset)
+                added = import_dataset(self.server.db, metadata, rows)
+                self.send_page(radius, notice=f'导入完成：新增 {added} 条，跳过已有 {len(rows) - added} 条。',
+                               filters=filters)
+                return
             if self.path == '/login':
                 code = fields.get('code', [''])[0].strip()
                 if not secrets.compare_digest(code.encode('utf-8'), self.server.admin_code.encode('ascii')):
@@ -358,6 +411,9 @@ class DemoHandler(BaseHTTPRequestHandler):
                 notice = 'approved' if decision == 'approve' else 'rejected'
         except ValueError as error:
             self.send_page(radius, searched=True, notice=str(error), status=400, filters=filters)
+            return
+        except sqlite3.Error:
+            self.send_page(radius, searched=True, notice='数据库写入失败，本次修改未保存。', status=500, filters=filters)
             return
         self.send_response(303)
         self.send_header('Location', '/?' + urlencode(dict(radius=radius, notice=notice, **filters)))
