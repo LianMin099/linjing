@@ -10,9 +10,12 @@ from map_config import CONFIG_PATH, save_config
 def check_git_exclusion():
     root = Path(__file__).resolve().parent
     relative = CONFIG_PATH.relative_to(root).as_posix()
-    ignored = subprocess.run(['git', 'check-ignore', '--quiet', relative], cwd=str(root),
+    # The desktop user and Codex can own files under different Windows accounts.
+    # Trust only this known project for these commands, without global changes.
+    git = ['git', '-c', 'safe.directory=' + root.as_posix()]
+    ignored = subprocess.run(git + ['check-ignore', '--quiet', relative], cwd=str(root),
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    tracked = subprocess.run(['git', 'ls-files', '--error-unmatch', relative], cwd=str(root),
+    tracked = subprocess.run(git + ['ls-files', '--error-unmatch', relative], cwd=str(root),
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if ignored.returncode != 0 or tracked.returncode != 1:
         raise ValueError('未能确认配置文件已排除 Git 上传，暂不保存。请让 Codex 检查。')
