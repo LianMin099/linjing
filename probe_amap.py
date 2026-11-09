@@ -159,10 +159,51 @@ def check_pair(key):
     print('\n请核对银行名称、商铺地址和小区期数。结果仅在本次窗口展示。')
 
 
+def find_bank_candidates(key):
+    """用已验证的高德接口临时查看银行候选；不保存返回的地点数据。"""
+    schools = request_api('text', {'keywords': '深圳信息职业技术', 'region': '440307',
+                                   'city_limit': 'true', 'page_size': 10}, key)
+    center = choose_school(schools)
+    print('\n查询学校周边 3 公里的银行候选（最多两页，每页 20 条）……')
+    seen = set()
+    total = 0
+    for page in (1, 2):
+        try:
+            pois = request_api('around', {'location': center, 'radius': 3000,
+                                          'keywords': '银行', 'page_size': 20,
+                                          'page_num': page, 'sortrule': 'distance'}, key)
+        except ProbeError as exc:
+            print('第 {} 页未取得：{}'.format(page, exc))
+            break
+        if not pois:
+            break
+        for poi in pois:
+            name = str(poi.get('name') or '名称未知')
+            address = str(poi.get('address') or '地址未知')
+            kind = str(poi.get('type') or '类别未标明')
+            source_id = str(poi.get('id') or '')
+            marker = source_id or (name, address)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            distance = poi.get('distance')
+            if str(distance).isdigit():
+                distance_text = '距学校约 {} 米'.format(distance)
+            else:
+                distance_text = '距离未返回'
+            total += 1
+            print('{}：{} | {} | {} | {}'.format(total, name, address, distance_text, kind))
+        if len(pois) < 20:
+            break
+    print('\n共显示 {} 条候选。银行网点、ATM 和其他地点需逐条核对。'.format(total))
+    print('结果仅在本次窗口展示；请勿直接当作已核验、可长期保存的数据。')
+
+
 def main():
     parser = argparse.ArgumentParser(description='邻境：候选数据源验证')
     parser.add_argument('--self-test', action='store_true', help='离线自检，不访问网络')
     parser.add_argument('--check-pair', action='store_true', help='临时核对两条试点候选')
+    parser.add_argument('--find-banks', action='store_true', help='临时查看学校周边银行候选')
     args = parser.parse_args()
     if args.self_test:
         self_test()
@@ -180,6 +221,13 @@ def main():
     if args.check_pair:
         try:
             check_pair(key)
+        except ProbeError as exc:
+            print(str(exc))
+            return 1
+        return 0
+    if args.find_banks:
+        try:
+            find_bank_candidates(key)
         except ProbeError as exc:
             print(str(exc))
             return 1
