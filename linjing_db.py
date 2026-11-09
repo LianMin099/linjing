@@ -31,8 +31,61 @@ def connect(path):
             submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             reviewed_at TEXT
         );
+        CREATE TABLE IF NOT EXISTS place_verifications (
+            id INTEGER PRIMARY KEY,
+            place_id INTEGER NOT NULL REFERENCES places(id),
+            place_version INTEGER NOT NULL,
+            result TEXT NOT NULL CHECK (result IN ('source_checked', 'needs_field_check')),
+            evidence_url TEXT NOT NULL,
+            note TEXT NOT NULL,
+            checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
     ''')
     return db
+
+
+def latest_verifications(db):
+    return {row['place_id']: row for row in db.execute('''
+        SELECT v.* FROM place_verifications v
+        JOIN (SELECT place_id, MAX(id) id FROM place_verifications GROUP BY place_id) last
+        ON last.id = v.id
+        JOIN places p ON p.id = v.place_id AND p.version = v.place_version
+    ''')}
+
+
+def ensure_verification_table(db):
+    db.execute('''CREATE TABLE IF NOT EXISTS place_verifications (
+        id INTEGER PRIMARY KEY,
+        place_id INTEGER NOT NULL REFERENCES places(id),
+        place_version INTEGER NOT NULL,
+        result TEXT NOT NULL CHECK (result IN ('source_checked', 'needs_field_check')),
+        evidence_url TEXT NOT NULL,
+        note TEXT NOT NULL,
+        checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )''')
+    db.commit()
+
+
+def record_verification(db, place_id, result, evidence_url, note):
+    from urllib.parse import urlsplit
+    result = result.strip()
+    evidence_url = evidence_url.strip()
+    note = note.strip()
+    parts = urlsplit(evidence_url)
+    if result not in ('source_checked', 'needs_field_check'):
+        raise ValueError('请选择有效的核验结果。')
+    if (len(evidence_url) > 500 or parts.scheme != 'https' or not parts.hostname
+            or parts.username or parts.password):
+        raise ValueError('请填写不含账号信息的 HTTPS 证据链接。')
+    if not note or len(note) > 300:
+        raise ValueError('请填写 300 字以内的核验说明。')
+    with db:
+        place = db.execute('SELECT id, version FROM places WHERE id = ?', (place_id,)).fetchone()
+        if place is None:
+            raise ValueError('地点不存在。')
+        db.execute('''INSERT INTO place_verifications
+            (place_id, place_version, result, evidence_url, note)
+            VALUES (?, ?, ?, ?, ?)''', (place_id, place['version'], result, evidence_url, note))
 
 
 def distance_m(first, second):

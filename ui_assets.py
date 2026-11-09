@@ -64,3 +64,7 @@ PILOT_CSS += "\n.place-address,.hero p,.location-diagram figcaption,.query-footn
 PILOT_CSS += """
 .map-status{font-size:12px;color:#706b81;padding:12px;background:white}.map-shell>.map-label{pointer-events:none;z-index:2}.live-pin{border:2px solid white;border-radius:50%;background:#8871cd;color:white;width:32px;height:32px;padding:0;box-shadow:0 2px 8px #4444}.live-pin.atm{background:#c99c5d}.live-pin.community{background:#7da58c}.locate-place,#map-reset{font-size:11px;padding:7px 11px;margin-top:10px;background:#eeebfa;color:#705bae}#map-fallback{padding:8px 12px;background:white}#map-reset{margin:8px 12px}#live-map[hidden]{display:none}
 """
+
+PILOT_CSS += """
+.verification-state{font-size:11px;color:#9b6848;background:#fff6e9;padding:5px 9px;border-radius:6px;margin:10px 0}.verification-evidence{font-size:11px;color:#797285;margin:8px 0}#verify-panel>p{font-size:12px;color:#706b81;margin:10px 0 18px}#verify-panel form{display:grid;grid-template-columns:1fr 1fr;gap:13px}#verify-panel label{font-size:12px}#verify-panel input,#verify-panel select,#verify-panel textarea{display:block;width:100%;margin-top:5px}#verify-panel textarea{min-height:80px}#verify-panel form button{align-self:end}#verify-panel label:nth-last-of-type(1){grid-column:1/-1}@media(max-width:680px){#verify-panel form{grid-template-columns:1fr}#verify-panel label:nth-last-of-type(1){grid-column:auto}}
+"""

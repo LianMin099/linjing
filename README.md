@@ -30,6 +30,10 @@
 
 双击 `打开真实地点查询.cmd` 可以导入并浏览首批真实样本，默认范围为 3 公里。访客可在 ATM 查询结果下提交地址建议。审核时使用启动窗口显示的本次口令登录管理员模式。口令与登录状态随程序重启失效，已通过的本机修订和审核记录保存在 `data/pilot.sqlite`。地点来源、坐标精度与许可见[样本说明](samples/README.md)。
 
+管理员登录后，页面底部可以为地点保存“公开资料已核对”或“仍需现场核实”的记录，填写可追溯的 HTTPS 证据链接和说明。查询卡片会显示当前地点版本的核验状态；地址纠错审核通过后版本增加，旧核验记录仍保留，但当前版本重新显示“未核验”。“公开资料已核对”只表示所填证据支持说明，不代表银行营业、ATM 可用或校外访客可进入。亲自核对前请勿填写已核对；具体待办见[地点核验清单](docs/地点核验清单.md)。
+
+`data/pilot.sqlite` 是本机试玩数据库，可能包含测试地址，不能直接作为参赛的真实数据结论。准备展示时，可用 `python run_pilot.py --db data/review.sqlite --open-browser` 打开独立数据库，再逐项核验。不要删除原数据库，以免丢失纠错和审核记录。
+
 `python import_places.py 数据文件.json` 只检查数据。确认允许存储后，可添加 `--db data/linjing.sqlite` 写入已创建的 `data` 目录。入库后保留来源、使用依据和导入时间。同一来源编号重复导入会跳过，已审核修改不会被覆盖。网页教学演示继续使用独立的虚构数据。
 
 JSON 顶层包含 `coordinate_system`（目前只接受 `WGS84`）、`source_url`、`permission_url`、`school` 和 `places`。`school` 包含 `longitude`、`latitude`、`source_url`、`permission_url`。`places` 中每条包含 `source_id`、`kind`（`bank`、`atm` 或 `community`）、`name`、`address`、`longitude`、`latitude`。程序检查链接格式和 3 公里范围，使用依据需人工核对。

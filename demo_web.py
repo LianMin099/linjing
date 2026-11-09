@@ -18,7 +18,9 @@ from live_map import map_widget, proxy_response
 from ui_assets import PILOT_CSS, CITY_ART, icon
 from demo_workflow import seed_demo
 from import_places import import_dataset, validate_dataset
-from linjing_db import connect, nearby_banks, review_correction, submit_address_correction
+from linjing_db import (connect, ensure_verification_table, latest_verifications,
+                        nearby_banks, record_verification, review_correction,
+                        submit_address_correction)
 
 
 RADII = (100, 300, 1000, 3000)
@@ -32,7 +34,7 @@ NOTICES = {'submitted': '建议已提交。审核通过前，查询仍显示原�
            'pilot-only': '管理员登录在真实地点查询页，请运行「打开真实地点查询.cmd」。'}
 ADMIN_COOKIE = 'linjing_admin'
 PLACE_TYPES = {'all': '银行和 ATM', 'bank': '仅银行网点', 'atm': '仅 ATM'}
-FORM_PATHS = ('/correction', '/review', '/login', '/logout', '/import')
+FORM_PATHS = ('/correction', '/review', '/login', '/logout', '/import', '/verify')
 MAX_IMPORT_BYTES = 65536
 
 
@@ -181,6 +183,25 @@ def place_sources(reference):
     return f'<p>坐标来源：{escape(reference["source_url"])}</p>'
 
 
+def verification_evidence(check):
+    if not check:
+        return ''
+    url = escape(check['evidence_url'], quote=True)
+    note = escape(check['note'])
+    checked_at = escape(check['checked_at'])
+    return f'<p class="verification-evidence">记录于 {checked_at} UTC · <a href="{url}" rel="noopener noreferrer">查看证据</a> · {note}</p>'
+
+
+def verification_state(place, check):
+    if check:
+        if check['result'] == 'source_checked':
+            return '资料来源已核对 · 现场情况仍待确认'
+        return '待现场核验'
+    if place['version'] > 1:
+        return '未核验 · 请勿将本机修订当作真实结论'
+    return '未核验'
+
+
 
 def import_panel(hidden):
     return f"""
@@ -230,6 +251,7 @@ def pilot_page(db, token, radius, notice, is_admin, filters, map_config=None):
                            for key, label in PLACE_TYPES.items())
     hidden = form_fields(token, radius, {'community': community['id'], 'kind': kind})
     rows = [row for row in nearby_banks(db, community['id'], radius) if kind == 'all' or row['kind'] == kind]
+    checks = latest_verifications(db)
     references = {row['place_id']: row for row in db.execute(
         'SELECT place_id, source_id, source_url FROM place_imports'
     )} if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='place_imports'").fetchone() else {}
@@ -241,7 +263,9 @@ def pilot_page(db, token, radius, notice, is_admin, filters, map_config=None):
         f'<p class="place-address">{escape(row["address"])}</p>'
         f'<div class="place-meta"><span class="badge {row["kind"]}-badge">{"ATM" if row["kind"] == "atm" else "银行网点"}</span>'
         f'<span class="badge">版本 {row["version"]}{" · 本机修订" if row["version"] > 1 else ""}</span></div>'
-        f'<details><summary>查看来源与核验状态</summary>{place_sources(references.get(row["id"]))}</details>'
+        f'<p class="verification-state">{verification_state(row, checks.get(row["id"]))}</p>'
+        + verification_evidence(checks.get(row['id']))
+        + f'<details><summary>查看来源与核验状态</summary>{place_sources(references.get(row["id"]))}</details>'
         f'<details><summary>提交地址纠错</summary><form method="post" action="/correction">{hidden}'
         f'<input type="hidden" name="place_id" value="{row["id"]}">'
         '<label>建议地址 <input name="address" maxlength="100" required></label> '
@@ -258,6 +282,19 @@ def pilot_page(db, token, radius, notice, is_admin, filters, map_config=None):
                        f'<form method="post" action="/login">{hidden}'
                        '<label>本次管理员口令 <input name="code" type="password" maxlength="64" required></label> '
                        '<button>管理员登录</button></form><small>口令显示在本机启动窗口。</small>')
+    verification_panel = ''
+    if is_admin:
+        place_options = ''.join(
+            f'<option value="{p["id"]}">{escape(p["name"])} · 版本 {p["version"]}</option>'
+            for p in db.execute('SELECT id, name, version FROM places ORDER BY id'))
+        verification_panel = (f'<section class="surface" id="verify-panel"><h2>资料核验记录</h2>'
+            '<p>只记录你亲自核对过的证据。资料核对不代表设备当前可用或访客可进入；地点版本变化后重新标为未核验。</p>'
+            f'<form method="post" action="/verify">{hidden}'
+            f'<label>地点<select name="place_id">{place_options}</select></label>'
+            '<label>核对结果<select name="result"><option value="needs_field_check">仍需现场核实</option><option value="source_checked">公开资料已核对</option></select></label>'
+            '<label>证据链接<input name="evidence_url" type="url" maxlength="500" placeholder="https://…" required></label>'
+            '<label>核验说明<textarea name="note" maxlength="300" required placeholder="说明核对了什么，仍有哪些未知项"></textarea></label>'
+            '<button>保存核验记录</button></form></section>')
     return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>邻境 · 真实样本查询</title>
 <style>{PILOT_CSS}</style>
@@ -275,6 +312,7 @@ def pilot_page(db, token, radius, notice, is_admin, filters, map_config=None):
 {('<ul class="results-list">' + results + '</ul>') if results else '<div class="empty">' + icon('search') + '<strong>附近还没有匹配的样本</strong><p>试试扩大探索范围，或选择其他设施类型。</p></div>'}
 </div></div><div class="query-footnote"><p>中信银行网点和中国银行 ATM 分别使用港中大（深圳）下园、上园的区域代表点。距离为估算，具体入口和开放情况待核实；位置示意图不含道路。</p><p>坐标数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors（ODbL）</a></p></div>
 <section class="surface" id="review"><div class="review-heading"><div><h2 class="section-label">{icon('edit')} 一起，让信息更准确</h2><p>发现地址有误？在地点卡片中提交纠错，审核结果会显示在这里。</p></div>{'<a class="hero-link" href="#import-panel">导入地点 →</a>' if is_admin else ''}</div><div class="review-body"><div class="admin-box" id="admin"><h3>管理工作台</h3>{admin_panel}</div><div class="history-box"><h3>反馈动态</h3>{correction_history(db, hidden, can_review=is_admin)}</div></div></section>{import_panel(hidden) if is_admin else ''}
+{verification_panel}
 <footer class="footer"><span>邻境 LINJING · 发现身边，连接生活</span><span>本地试点版本 · 修改保存在本机数据库</span></footer></main></div></html>'''
 
 
@@ -348,7 +386,7 @@ class DemoHandler(BaseHTTPRequestHandler):
             self.serve_map_proxy()
             return
         if path in FORM_PATHS:
-            notice = 'pilot-only' if path in ('/login', '/logout', '/import') and not self.server.pilot else 'open-home'
+            notice = 'pilot-only' if path in ('/login', '/logout', '/import', '/verify') and not self.server.pilot else 'open-home'
             self.send_response(303)
             self.send_header('Location', '/?notice=' + notice)
             self.send_header('Cache-Control', 'no-store')
@@ -367,7 +405,7 @@ class DemoHandler(BaseHTTPRequestHandler):
         if not self.valid_host() or self.path not in paths:
             self.send_error(404)
             return
-        if self.path == '/import' and not self.is_admin():
+        if self.path in ('/import', '/verify') and not self.is_admin():
             self.send_error(403)
             return
         cookie = None
@@ -386,6 +424,14 @@ class DemoHandler(BaseHTTPRequestHandler):
             radius = parse_radius(fields.get('radius', [''])[0])
             if self.server.pilot:
                 filters = pilot_filters(fields)
+            if self.path == '/verify':
+                raw_id = fields.get('place_id', [''])[0]
+                if not raw_id.isascii() or not raw_id.isdigit() or len(raw_id) > 18:
+                    raise ValueError('请选择有效的地点。')
+                record_verification(self.server.db, int(raw_id), fields.get('result', [''])[0],
+                                    fields.get('evidence_url', [''])[0], fields.get('note', [''])[0])
+                self.send_page(radius, notice='核验记录已保存；现场情况仍须按证据确认。', filters=filters)
+                return
             if self.path == '/import':
                 raw = fields.get('dataset', [''])[0]
                 if len(raw.encode('utf-8')) > MAX_IMPORT_BYTES:
@@ -459,6 +505,7 @@ def start_server(pilot_db=None, open_browser=False, port=0):
         db = sqlite3.connect(pilot_db.resolve().as_uri() + '?mode=rw', uri=True)
         db.row_factory = sqlite3.Row
         db.execute('PRAGMA foreign_keys = ON')
+        ensure_verification_table(db)
     with closing(db), LocalDemoServer(('127.0.0.1', port), DemoHandler) as server:
         server.pilot = pilot_db is not None
         server.map_config = None
