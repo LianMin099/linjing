@@ -19,7 +19,7 @@ from ui_assets import PILOT_CSS, CITY_ART, icon
 from demo_workflow import seed_demo
 from import_places import import_dataset, validate_dataset
 from linjing_db import (connect, ensure_verification_table, latest_verifications,
-                        nearby_banks, record_verification, review_correction,
+                        nearby_banks, nearby_communities, record_verification, review_correction,
                         submit_address_correction)
 
 
@@ -202,6 +202,19 @@ def verification_state(place, check):
     return '未核验'
 
 
+def community_links(db, place):
+    if place['kind'] != 'bank':
+        return ''
+    matches = nearby_communities(db, place['id'], 3000)
+    if not matches:
+        return '<details><summary>查看网点周边小区</summary><p>3 公里内暂无已入库小区。</p></details>'
+    links = ''.join(
+        f'<li><a href="/?community={item["id"]}&radius=3000&kind=all">{escape(item["name"])}</a>'
+        f' · {item["distance_m"] / 1000:.2f} 公里（直线估算）</li>'
+        for item in matches)
+    return f'<details><summary>网点周边小区（{len(matches)}）</summary><ul>{links}</ul></details>'
+
+
 
 def import_panel(hidden):
     return f"""
@@ -266,7 +279,8 @@ def pilot_page(db, token, radius, notice, is_admin, filters, map_config=None):
         f'<p class="verification-state">{verification_state(row, checks.get(row["id"]))}</p>'
         + verification_evidence(checks.get(row['id']))
         + f'<details><summary>查看来源与核验状态</summary>{place_sources(references.get(row["id"]))}</details>'
-        f'<details><summary>提交地址纠错</summary><form method="post" action="/correction">{hidden}'
+        + community_links(db, row)
+        + f'<details><summary>提交地址纠错</summary><form method="post" action="/correction">{hidden}'
         f'<input type="hidden" name="place_id" value="{row["id"]}">'
         '<label>建议地址 <input name="address" maxlength="100" required></label> '
         '<label>依据 <input name="reason" maxlength="200" required></label> '

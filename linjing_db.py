@@ -114,6 +114,24 @@ def nearby_banks(db, community_id, radius_m):
     return sorted(matches, key=lambda place: (place['distance_m'], place['id']))
 
 
+def nearby_communities(db, bank_id, radius_m):
+    """按同一 WGS84 坐标系求银行或 ATM 周边的小区。"""
+    if not math.isfinite(radius_m) or radius_m <= 0:
+        raise ValueError('查询半径必须是正数')
+    center = db.execute(
+        "SELECT longitude, latitude FROM places WHERE id = ? AND kind IN ('bank', 'atm')",
+        (bank_id,),
+    ).fetchone()
+    if center is None:
+        raise ValueError('找不到对应银行或 ATM')
+    matches = []
+    for place in db.execute("SELECT * FROM places WHERE kind = 'community'"):
+        distance = distance_m(center, (place['longitude'], place['latitude']))
+        if distance <= radius_m:
+            matches.append(dict(place, distance_m=round(distance, 1)))
+    return sorted(matches, key=lambda place: (place['distance_m'], place['id']))
+
+
 def submit_address_correction(db, place_id, new_address, reason):
     address, reason = new_address.strip(), reason.strip()
     if not address or not reason:
