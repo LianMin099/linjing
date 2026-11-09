@@ -13,6 +13,8 @@ import sqlite3
 from urllib.parse import parse_qs, urlencode, urlsplit
 import webbrowser
 
+from map_config import load_config
+from live_map import map_widget, proxy_response
 from ui_assets import PILOT_CSS, CITY_ART, icon
 from demo_workflow import seed_demo
 from import_places import import_dataset, validate_dataset
@@ -213,7 +215,7 @@ document.getElementById("import-file").addEventListener("change", async (event) 
 
 
 
-def pilot_page(db, token, radius, notice, is_admin, filters):
+def pilot_page(db, token, radius, notice, is_admin, filters, map_config=None):
     communities = db.execute("SELECT id, name, longitude, latitude FROM places WHERE kind = 'community' ORDER BY name, id").fetchall()
     if not communities:
         return '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><p>数据库里还没有小区记录。</p></html>'
@@ -268,7 +270,7 @@ def pilot_page(db, token, radius, notice, is_admin, filters):
 {message}
 <section class="surface" id="query"><div class="query-header"><h2 class="section-label">{icon('search')} 发现附近</h2><span class="subtle-label">选择一个小区，开启周边探索</span></div>
 <form class="filters" method="get" action="/"><label>所在小区<select name="community">{community_options}</select></label><label>探索范围<select name="radius">{options}</select></label><label>设施类型<select name="kind">{kind_options}</select></label><button>{icon('search')}查附近</button></form></section>
-<div class="query-layout"><div class="map-panel"><div class="panel-heading"><h3 class="section-label">{icon('compass')} 周边分布</h3><small>相对位置示意</small></div><div class="map-shell"><span class="map-label">{escape(community['name'])} · {radius:,} m</span>{location_diagram(community, rows, radius)}</div><div class="map-legend"><span><i class="legend-dot" style="background:#7da58c"></i>所选小区</span><span><i class="legend-dot" style="background:#8871cd"></i>银行网点</span><span><i class="legend-dot" style="background:#c99c5d"></i>ATM</span></div></div>
+<div class="query-layout"><div class="map-panel"><div class="panel-heading"><h3 class="section-label">{icon('compass')} 周边分布</h3><small>{"高德地图 · 参考点" if map_config else "相对位置示意"}</small></div><div class="map-shell"><span class="map-label">{escape(community['name'])} · {radius:,} m</span>{map_widget(community, rows, radius, map_config, location_diagram(community, rows, radius))}</div><div class="map-legend"><span><i class="legend-dot" style="background:#7da58c"></i>所选小区</span><span><i class="legend-dot" style="background:#8871cd"></i>银行网点</span><span><i class="legend-dot" style="background:#c99c5d"></i>ATM</span></div></div>
 <div><div class="panel-heading"><h3>探索结果 <span class="count">{len(rows):02d}</span></h3><small>按直线距离排序</small></div>
 {('<ul class="results-list">' + results + '</ul>') if results else '<div class="empty">' + icon('search') + '<strong>附近还没有匹配的样本</strong><p>试试扩大探索范围，或选择其他设施类型。</p></div>'}
 </div></div><div class="query-footnote"><p>中信银行网点和中国银行 ATM 分别使用港中大（深圳）下园、上园的区域代表点。距离为估算，具体入口和开放情况待核实；位置示意图不含道路。</p><p>坐标数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors（ODbL）</a></p></div>
@@ -284,6 +286,32 @@ class LocalDemoServer(HTTPServer):
 
 
 class DemoHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        # Map SDK query strings can carry credentials; do not log request URLs.
+        pass
+
+    def serve_map_proxy(self):
+        expected = urlsplit('http://' + self.headers.get('Host', ''))
+        referer = urlsplit(self.headers.get('Referer', ''))
+        if not self.server.map_config or referer.netloc != expected.netloc:
+            print('Map proxy: request origin rejected', flush=True)
+            self.send_error(403)
+            return
+        try:
+            body, content_type = proxy_response(self.path, self.server.map_config)
+        except Exception as error:
+            print('Map proxy: ' + type(error).__name__, flush=True)
+            # Never relay exception text: upstream URLs contain the security code.
+            self.send_error(502, 'Map service unavailable')
+            return
+        self.send_response(200)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.end_headers()
+        self.wfile.write(body)
+
     def is_admin(self):
         if not self.server.pilot or self.server.admin_session is None:
             return False
@@ -297,7 +325,7 @@ class DemoHandler(BaseHTTPRequestHandler):
             session.value.encode('utf-8'), self.server.admin_session.encode('ascii'))
 
     def send_page(self, radius=1000, searched=False, notice='', status=200, filters=None):
-        content = (pilot_page(self.server.db, self.server.token, radius, notice, self.is_admin(), filters or pilot_filters({})) if self.server.pilot
+        content = (pilot_page(self.server.db, self.server.token, radius, notice, self.is_admin(), filters or pilot_filters({}), self.server.map_config) if self.server.pilot
                    else page(self.server.db, self.server.token, radius, searched, notice))
         body = content.encode('utf-8')
         self.send_response(status)
@@ -315,6 +343,9 @@ class DemoHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if not self.valid_host():
             self.send_error(404)
+            return
+        if path.startswith('/_AMapService/'):
+            self.serve_map_proxy()
             return
         if path in FORM_PATHS:
             notice = 'pilot-only' if path in ('/login', '/logout', '/import') and not self.server.pilot else 'open-home'
@@ -430,6 +461,12 @@ def start_server(pilot_db=None, open_browser=False, port=0):
         db.execute('PRAGMA foreign_keys = ON')
     with closing(db), LocalDemoServer(('127.0.0.1', port), DemoHandler) as server:
         server.pilot = pilot_db is not None
+        server.map_config = None
+        if server.pilot:
+            try:
+                server.map_config = load_config()
+            except ValueError:
+                print('地图配置不可用，将显示离线示意图。请重新配置地图。', flush=True)
         if not server.pilot:
             seed_demo(db)
         server.db = db

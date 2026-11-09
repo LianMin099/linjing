@@ -60,3 +60,7 @@ main{padding:30px 42px 35px;max-width:1400px;margin:auto}.page-heading{display:f
 
 # Keep secondary copy legible without competing with the primary controls.
 PILOT_CSS += "\n.place-address,.hero p,.location-diagram figcaption,.query-footnote,.history-box,.admin-box p,.admin-box small{color:#706b81}.place-type,.place-distance small,.subtle-label,.panel-heading small{color:#7d768d}.place-address{font-size:13px}.nav-link[aria-label]:focus-visible{outline-offset:2px}\n"
+
+PILOT_CSS += """
+.map-status{font-size:12px;color:#706b81;padding:12px;background:white}.map-shell>.map-label{pointer-events:none;z-index:2}.live-pin{border:2px solid white;border-radius:50%;background:#8871cd;color:white;width:32px;height:32px;padding:0;box-shadow:0 2px 8px #4444}.live-pin.atm{background:#c99c5d}.live-pin.community{background:#7da58c}.locate-place,#map-reset{font-size:11px;padding:7px 11px;margin-top:10px;background:#eeebfa;color:#705bae}#map-fallback{padding:8px 12px;background:white}#map-reset{margin:8px 12px}#live-map[hidden]{display:none}
+"""
