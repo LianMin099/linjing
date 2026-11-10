@@ -54,13 +54,15 @@ def main():
         process = None
         try:
             process, url, code, first_line = start(folder)
-            assert first_line == 'Samples: 5 added, 0 already present.', first_line
+            assert first_line == 'Samples: 8 added, 0 already present.', first_line
             opener = build_opener(HTTPCookieProcessor(CookieJar()))
             with opener.open(url + '/', timeout=5) as response:
                 html = response.read().decode('utf-8')
             assert '当前结果 · 3 处' in html and '深圳农村商业银行龙城支行' in html
             token = re.search(r'name="token" value="([^"]+)"', html).group(1)
             db = sqlite3.connect(str(folder / 'data/check.sqlite'))
+            assert db.execute("SELECT kind, COUNT(*) FROM places GROUP BY kind ORDER BY kind").fetchall() == [
+                ('atm', 1), ('bank', 2), ('community', 5)]
             bank_id = db.execute("SELECT id FROM places WHERE name = '深圳农村商业银行龙城支行'").fetchone()[0]
             community_id = db.execute("SELECT id FROM places WHERE kind = 'community' ORDER BY id LIMIT 1").fetchone()[0]
             original = db.execute('SELECT address FROM places WHERE id = ?', (bank_id,)).fetchone()[0]
@@ -90,11 +92,11 @@ def main():
             process.wait(timeout=5)
             process = None
             process, url, code, first_line = start(folder)
-            assert first_line == 'Samples: 0 added, 5 already present.', first_line
+            assert first_line == 'Samples: 0 added, 8 already present.', first_line
             db = sqlite3.connect(str(folder / 'data/check.sqlite'))
             assert db.execute('SELECT address, version FROM places WHERE id = ?', (bank_id,)).fetchone() == (proposed, 2)
             db.close()
-            print('通过：独立目录启动、5 条导入、查询、待审核不改址、管理员审核、重启保留修订。')
+            print('通过：独立目录启动、8 条导入、查询、待审核不改址、管理员审核、重启保留修订。')
             print('所有测试数据位于自动清理的临时目录；未使用本机试玩数据库或地图密钥。')
         finally:
             if process is not None:

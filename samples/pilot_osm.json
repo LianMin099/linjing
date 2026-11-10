@@ -13,6 +13,9 @@
     {"source_id": "way/544063816:cuhksz-atm-area", "kind": "atm", "name": "中国银行 ATM（港中大深圳上园）", "address": "香港中文大学（深圳）上园服务中心；坐标为上园区域参考点", "longitude": 114.19759, "latitude": 22.69356},
     {"source_id":"way/533650675:citic-cuhksz-branch-area","kind":"bank","name":"中信银行深圳港中大支行","address":"深圳市龙岗区龙翔大道 2001 号香港中文大学（深圳）校区；坐标为下园区域参考点","longitude":114.20786,"latitude":22.69094},
     {"source_id":"way/356939648","kind":"community","name":"京基·御景中央花园（一期）","address":"深圳市龙岗区京基·御景中央花园（一期）；坐标为小区区域参考点","longitude":114.20437,"latitude":22.71115},
-    {"source_id":"way/1170469872:srcb-longcheng-building-area","kind":"bank","name":"深圳农村商业银行龙城支行","address":"深圳市龙岗区龙岗大道（龙岗段）1099号2栋1层1号；坐标为中粮祥云国际写字楼2栋建筑参考点，非网点入口","longitude":114.2275,"latitude":22.69869}
+    {"source_id":"way/1170469872:srcb-longcheng-building-area","kind":"bank","name":"深圳农村商业银行龙城支行","address":"深圳市龙岗区龙岗大道（龙岗段）1099号2栋1层1号；坐标为中粮祥云国际写字楼2栋建筑参考点，非网点入口","longitude":114.2275,"latitude":22.69869},
+    {"source_id":"way/356926336","kind":"community","name":"京基·御景中央花园（二期）","address":"深圳市龙岗区龙城街道飞扬路京基御景中央花园二期；坐标为二期区域参考点，非小区入口","longitude":114.20335,"latitude":22.70861},
+    {"source_id":"way/357134256","kind":"community","name":"睿智华庭","address":"深圳市龙岗区龙城街道龙飞大道503号；坐标为小区区域参考点，非入口","longitude":114.20475,"latitude":22.70863},
+    {"source_id":"way/1414021722","kind":"community","name":"阳光·天健城","address":"深圳市龙岗区龙城街道黄阁路与沙园路交汇处；坐标为小区区域参考点，非入口","longitude":114.21569,"latitude":22.70431}
   ]
 }
