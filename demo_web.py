@@ -264,6 +264,15 @@ def pilot_page(db, token, radius, notice, is_admin, filters, map_config=None):
                            for key, label in PLACE_TYPES.items())
     hidden = form_fields(token, radius, {'community': community['id'], 'kind': kind})
     rows = [row for row in nearby_banks(db, community['id'], radius) if kind == 'all' or row['kind'] == kind]
+    counts = {place_kind: sum(row['kind'] == place_kind for row in rows) for place_kind in ('bank', 'atm')}
+    scale = max(1, *counts.values())
+    chart = ''.join(
+        f'<div class="stat-row"><span>{label}</span><div class="stat-track" role="img" '
+        f'aria-label="{label} {counts[place_kind]} 条"><i class="stat-fill {place_kind}" '
+        f'style="width:{counts[place_kind] / scale * 100:.0f}%"></i></div>'
+        f'<strong>{counts[place_kind]}</strong></div>'
+        for place_kind, label in (('bank', '银行网点'), ('atm', 'ATM'))
+    )
     checks = latest_verifications(db)
     references = {row['place_id']: row for row in db.execute(
         'SELECT place_id, source_id, source_url FROM place_imports'
@@ -321,6 +330,7 @@ def pilot_page(db, token, radius, notice, is_admin, filters, map_config=None):
 {message}
 <section class="surface" id="query"><div class="query-header"><h2 class="section-label">{icon('search')} 发现附近</h2><span class="subtle-label">选择一个小区，开启周边探索</span></div>
 <form class="filters" method="get" action="/"><label>所在小区<select name="community">{community_options}</select></label><label>探索范围<select name="radius">{options}</select></label><label>设施类型<select name="kind">{kind_options}</select></label><button>{icon('search')}查附近</button></form></section>
+<section class="query-stats" aria-label="当前查询统计"><div><strong>当前结果 · {len(rows)} 处</strong><p>仅统计已入库试点样本，随小区、范围和类型筛选变化。</p></div><div class="stat-bars">{chart}</div></section>
 <div class="query-layout"><div class="map-panel"><div class="panel-heading"><h3 class="section-label">{icon('compass')} 周边分布</h3><small>{"高德地图 · 参考点" if map_config else "相对位置示意"}</small></div><div class="map-shell"><span class="map-label">{escape(community['name'])} · {radius:,} m</span>{map_widget(community, rows, radius, map_config, location_diagram(community, rows, radius))}</div><div class="map-legend"><span><i class="legend-dot" style="background:#7da58c"></i>所选小区</span><span><i class="legend-dot" style="background:#8871cd"></i>银行网点</span><span><i class="legend-dot" style="background:#c99c5d"></i>ATM</span></div></div>
 <div><div class="panel-heading"><h3>探索结果 <span class="count">{len(rows):02d}</span></h3><small>按直线距离排序</small></div>
 {('<ul class="results-list">' + results + '</ul>') if results else '<div class="empty">' + icon('search') + '<strong>附近还没有匹配的样本</strong><p>试试扩大探索范围，或选择其他设施类型。</p></div>'}
