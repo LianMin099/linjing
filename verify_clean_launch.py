@@ -1,6 +1,7 @@
 """在临时目录验证源码启动、查询、纠错审核与重启保存。"""
 from http.cookiejar import CookieJar
 from pathlib import Path
+import os
 import re
 import shutil
 import sqlite3
@@ -17,17 +18,23 @@ FILES = ('run_pilot.py', 'demo_web.py', 'demo_workflow.py', 'import_places.py',
 
 
 def start(folder):
+    environment = os.environ.copy()
+    environment['PYTHONIOENCODING'] = 'utf-8'
     process = subprocess.Popen(
         [sys.executable, '-B', 'run_pilot.py', '--db', 'data/check.sqlite'],
         cwd=str(folder), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        universal_newlines=True, encoding='utf-8', bufsize=1)
-    lines = [process.stdout.readline().strip() for _ in range(3)]
-    url = next((line.rsplit('：', 1)[-1] for line in lines if line.startswith('邻境本机演示：')), '')
-    code = next((line.rsplit('：', 1)[-1] for line in lines if line.startswith('本次管理员口令：')), '')
-    if not url or not code:
+        universal_newlines=True, encoding='utf-8', bufsize=1, env=environment)
+    try:
+        lines = [process.stdout.readline().strip() for _ in range(3)]
+        url = next((line.rsplit('：', 1)[-1] for line in lines if line.startswith('邻境本机演示：')), '')
+        code = next((line.rsplit('：', 1)[-1] for line in lines if line.startswith('本次管理员口令：')), '')
+        if not url or not code:
+            raise RuntimeError('启动失败；输出：' + repr(lines))
+        return process, url, code, lines[0]
+    except Exception:
         process.terminate()
-        raise RuntimeError('启动失败；输出：' + repr(lines))
-    return process, url, code, lines[0]
+        process.wait(timeout=5)
+        raise
 
 
 def post(opener, url, path, fields):
