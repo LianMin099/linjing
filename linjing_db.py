@@ -40,6 +40,11 @@ def connect(path):
             note TEXT NOT NULL,
             checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS query_interests (
+            community_id INTEGER PRIMARY KEY REFERENCES places(id),
+            search_count INTEGER NOT NULL DEFAULT 0,
+            last_searched_at TEXT
+        );
     ''')
     return db
 
@@ -64,6 +69,43 @@ def ensure_verification_table(db):
         checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )''')
     db.commit()
+
+
+def ensure_query_interest_table(db):
+    db.execute('''CREATE TABLE IF NOT EXISTS query_interests (
+        community_id INTEGER PRIMARY KEY REFERENCES places(id),
+        search_count INTEGER NOT NULL DEFAULT 0,
+        last_searched_at TEXT
+    )''')
+    db.commit()
+
+
+def record_query_interest(db, community_id):
+    """只累计主动查询的地点编号，不保存访问者身份。"""
+    if db.execute("SELECT 1 FROM places WHERE id = ? AND kind = 'community'", (community_id,)).fetchone() is None:
+        return False
+    with db:
+        db.execute('''INSERT INTO query_interests (community_id, search_count, last_searched_at)
+            VALUES (?, 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(community_id) DO UPDATE SET
+            search_count = search_count + 1, last_searched_at = CURRENT_TIMESTAMP''', (community_id,))
+    return True
+
+
+def priority_queue(db):
+    """按搜索需求和仍未核验的周边设施，列出人工更新顺序。"""
+    checks = latest_verifications(db)
+    rows = []
+    for community in db.execute("SELECT id, name FROM places WHERE kind = 'community'"):
+        interest = db.execute('SELECT search_count FROM query_interests WHERE community_id = ?',
+                              (community['id'],)).fetchone()
+        searches = interest['search_count'] if interest else 0
+        nearby = nearby_banks(db, community['id'], 3000)
+        unverified = sum(place['id'] not in checks or checks[place['id']]['result'] != 'source_checked'
+                         for place in nearby)
+        rows.append({'name': community['name'], 'searches': searches,
+                     'unverified': unverified, 'score': searches * 2 + unverified})
+    return sorted(rows, key=lambda row: (-row['score'], row['name']))
 
 
 def record_verification(db, place_id, result, evidence_url, note):

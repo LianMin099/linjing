@@ -18,8 +18,9 @@ from live_map import map_widget, proxy_response
 from ui_assets import PILOT_CSS, CITY_ART, icon
 from demo_workflow import seed_demo
 from import_places import import_dataset, validate_dataset
-from linjing_db import (connect, ensure_verification_table, latest_verifications,
-                        nearby_banks, nearby_communities, record_verification, review_correction,
+from linjing_db import (connect, ensure_verification_table, ensure_query_interest_table,
+                        latest_verifications, nearby_banks, nearby_communities, priority_queue,
+                        record_query_interest, record_verification, review_correction,
                         submit_address_correction)
 
 
@@ -306,7 +307,12 @@ def pilot_page(db, token, radius, notice, is_admin, filters, map_config=None):
                        '<label>本次管理员口令 <input name="code" type="password" maxlength="64" required></label> '
                        '<button>管理员登录</button></form><small>口令显示在本机启动窗口。</small>')
     verification_panel = ''
+    priority_panel = ''
     if is_admin:
+        queue = priority_queue(db)
+        items = ''.join(f'<li><strong>{index}. {escape(item["name"])}</strong><span>查询请求 {item["searches"]} 次 · 周边待资料核对 {item["unverified"]} 处</span></li>'
+                        for index, item in enumerate(queue, 1))
+        priority_panel = '<section class="surface priority-panel"><h2>优先核验队列</h2><p>查询请求越多、周边待资料核对设施越多，越靠前；刷新也会计数。仅供人工安排，不会自动更改地点。</p><ol>' + items + '</ol></section>'
         place_options = ''.join(
             f'<option value="{p["id"]}">{escape(p["name"])} · 版本 {p["version"]}</option>'
             for p in db.execute('SELECT id, name, version FROM places ORDER BY id'))
@@ -337,6 +343,7 @@ def pilot_page(db, token, radius, notice, is_admin, filters, map_config=None):
 </div></div><div class="query-footnote"><p>中信银行网点和中国银行 ATM 分别使用港中大（深圳）下园、上园的区域代表点。距离为估算，具体入口和开放情况待核实；位置示意图不含道路。</p><p>坐标数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors（ODbL）</a></p></div>
 <section class="surface" id="review"><div class="review-heading"><div><h2 class="section-label">{icon('edit')} 一起，让信息更准确</h2><p>发现地址有误？在地点卡片中提交纠错，审核结果会显示在这里。</p></div>{'<a class="hero-link" href="#import-panel">导入地点 →</a>' if is_admin else ''}</div><div class="review-body"><div class="admin-box" id="admin"><h3>管理工作台</h3>{admin_panel}</div><div class="history-box"><h3>反馈动态</h3>{correction_history(db, hidden, can_review=is_admin)}</div></div></section>{import_panel(hidden) if is_admin else ''}
 {verification_panel}
+{priority_panel}
 <footer class="footer"><span>邻境 LINJING · 发现身边，连接生活</span><span>本地试点版本 · 修改保存在本机数据库</span></footer></main></div></html>'''
 
 
@@ -422,6 +429,10 @@ class DemoHandler(BaseHTTPRequestHandler):
         fields = parse_qs(urlsplit(self.path).query)
         radius = parse_radius(fields.get('radius', ['3000' if self.server.pilot else ''])[0])
         notice = NOTICES.get(fields.get('notice', [''])[0], '')
+        if self.server.pilot and 'radius' in fields and 'community' in fields and 'notice' not in fields:
+            selected = pilot_filters(fields)['community']
+            if selected:
+                record_query_interest(self.server.db, int(selected))
         self.send_page(radius, 'radius' in fields, notice, filters=pilot_filters(fields))
 
     def do_POST(self):
@@ -530,6 +541,7 @@ def start_server(pilot_db=None, open_browser=False, port=0):
         db.row_factory = sqlite3.Row
         db.execute('PRAGMA foreign_keys = ON')
         ensure_verification_table(db)
+        ensure_query_interest_table(db)
     with closing(db), LocalDemoServer(('127.0.0.1', port), DemoHandler) as server:
         server.pilot = pilot_db is not None
         server.map_config = None

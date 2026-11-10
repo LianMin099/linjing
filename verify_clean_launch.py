@@ -55,8 +55,15 @@ def main():
             token = re.search(r'name="token" value="([^"]+)"', html).group(1)
             db = sqlite3.connect(str(folder / 'data/check.sqlite'))
             bank_id = db.execute("SELECT id FROM places WHERE name = '深圳农村商业银行龙城支行'").fetchone()[0]
+            community_id = db.execute("SELECT id FROM places WHERE kind = 'community' ORDER BY id LIMIT 1").fetchone()[0]
             original = db.execute('SELECT address FROM places WHERE id = ?', (bank_id,)).fetchone()[0]
             proposed = original + '（临时验证，不作为真实地址）'
+            db.close()
+            with opener.open(url + '/?community={}&radius=3000&kind=all'.format(community_id), timeout=5) as response:
+                assert '当前结果 · 3 处' in response.read().decode('utf-8')
+            db = sqlite3.connect(str(folder / 'data/check.sqlite'))
+            assert db.execute('SELECT search_count FROM query_interests WHERE community_id = ?',
+                              (community_id,)).fetchone()[0] == 1
             db.close()
             post(opener, url, '/correction', {'token': token, 'radius': 3000,
                  'community': '', 'kind': 'all', 'place_id': bank_id,
@@ -67,6 +74,8 @@ def main():
             db.close()
             post(opener, url, '/login', {'token': token, 'radius': 3000,
                  'community': '', 'kind': 'all', 'code': code})
+            with opener.open(url + '/', timeout=5) as response:
+                assert '优先核验队列' in response.read().decode('utf-8')
             reviewed = post(opener, url, '/review', {'token': token, 'radius': 3000,
                  'community': '', 'kind': 'all', 'id': correction_id, 'decision': 'approve'})
             assert proposed in reviewed and '已通过' in reviewed
