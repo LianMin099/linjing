@@ -16,6 +16,7 @@ def proxy_response(request_path, config):
         '/_AMapService/v3/log/init': 'https://restapi.amap.com/v3/log/init',
         '/_AMapService/v4/map/styles': 'https://webapi.amap.com/v4/map/styles',
         '/_AMapService/v3/assistant/coordinate/convert': 'https://restapi.amap.com/v3/assistant/coordinate/convert',
+        '/_AMapService/v3/place/around': 'https://restapi.amap.com/v3/place/around',
     }
     if parsed.path not in routes or len(parsed.query) > 12000:
         raise ValueError('Unsupported map request')
@@ -37,17 +38,26 @@ def proxy_response(request_path, config):
         return body, content_type
 
 
-def map_widget(community, rows, radius, config, fallback):
+def map_widget(community, rows, radius, config, fallback, school=None):
     if not config:
         return '<p class="map-status">未配置在线地图，当前显示位置示意图。</p>' + fallback
     points = [dict(id=community['id'], name=community['name'], kind='community',
                    position=[community['longitude'], community['latitude']])]
     points += [dict(id=row['id'], name=row['name'], kind=row['kind'],
                     position=[row['longitude'], row['latitude']]) for row in rows]
-    data = json.dumps(dict(key=config['js_key'], points=points, radius=radius), ensure_ascii=True).replace('<', '\\u003c')
+    data = json.dumps(dict(key=config['js_key'], points=points, radius=radius, school=school), ensure_ascii=True).replace('<', '\\u003c')
     return '''<div id="live-map" aria-label="周边高德地图" style="height:360px;width:100%"></div>
 <p id="map-status" class="map-status" role="status">正在加载高德地图…</p>
 <button type="button" id="map-reset" hidden>查看全部地点</button>
+<div id="amap-live-search" hidden>
+<h4>高德实时查找</h4>
+<p>按学校周边 3 公里临时查看高德地点。结果由高德直接显示，不计入邻境已入库数量。</p>
+<button type="button" data-amap-search="银行">查银行</button>
+<button type="button" data-amap-search="住宅小区">查小区</button>
+<button type="button" id="amap-search-clear">清除实时结果</button>
+<p id="amap-search-status" role="status">点击按钮后开始搜索。</p>
+<div id="amap-search-results"></div>
+</div>
 <details id="map-fallback"><summary>查看离线位置示意图</summary>''' + fallback + '''</details>
 <script id="map-data" type="application/json">''' + data + '''</script>
 <script>
@@ -119,6 +129,55 @@ def map_widget(community, rows, radius, config, fallback):
       });
       const reset = document.getElementById('map-reset');
       reset.onclick = () => map.setFitView([circle, ...markers], false, [35,35,35,35]);
+      if (Array.isArray(data.school) && data.school.length === 2) {
+        const livePanel = document.getElementById('amap-live-search');
+        const searchStatus = document.getElementById('amap-search-status');
+        let placeSearch = null;
+        let schoolCenter = null;
+        livePanel.hidden = false;
+        AMap.plugin('AMap.PlaceSearch', () => {
+          if (!window.AMap || !AMap.PlaceSearch) {
+            searchStatus.textContent = '地点搜索插件不可用，请检查网页地图 Key 的服务权限。';
+            return;
+          }
+          placeSearch = new AMap.PlaceSearch({city:'440307', citylimit:true,
+            pageSize:20, pageIndex:1, map:map, panel:'amap-search-results', autoFitView:false});
+        });
+        document.querySelectorAll('[data-amap-search]').forEach(button => {
+          button.addEventListener('click', async () => {
+            if (!placeSearch) { searchStatus.textContent = '搜索服务还在加载，请稍后再试。'; return; }
+            button.disabled = true;
+            searchStatus.textContent = '正在查询学校附近的' + button.dataset.amapSearch + '…';
+            try {
+              if (!schoolCenter) {
+                schoolCenter = await new Promise((resolve, reject) => {
+                  AMap.convertFrom(data.school, 'gps', (state, result) => {
+                    if (state === 'complete' && result.locations && result.locations.length === 1)
+                      resolve(result.locations[0]);
+                    else reject(new Error('school conversion'));
+                  });
+                });
+              }
+              placeSearch.setType(button.dataset.amapSearch === '银行' ? '金融保险服务' : '商务住宅');
+              placeSearch.searchNearBy(button.dataset.amapSearch, schoolCenter, 3000, (state, result) => {
+                if (state === 'complete') searchStatus.textContent = '已显示高德实时结果；名称、类别及营业状态仍需判断。';
+                else if (state === 'no_data') searchStatus.textContent = '高德本次没有返回匹配地点。';
+                else searchStatus.textContent = '搜索失败，请检查服务权限或稍后再试。';
+                button.disabled = false;
+              });
+            } catch (_) {
+              searchStatus.textContent = '学校坐标转换失败，暂时无法搜索。';
+              button.disabled = false;
+            }
+          });
+        });
+        document.getElementById('amap-search-clear').onclick = () => {
+          if (placeSearch) placeSearch.clear();
+          document.getElementById('amap-search-results').replaceChildren();
+          searchStatus.textContent = '已清除实时结果。';
+          reset.onclick();
+        };
+      }
       map.on('complete', () => {
         if (finished) return;
         finished = true; clearTimeout(timer);
