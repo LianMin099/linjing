@@ -59,6 +59,7 @@ def main():
             with opener.open(url + '/', timeout=5) as response:
                 html = response.read().decode('utf-8')
             assert '当前结果 · 3 处' in html and '深圳农村商业银行龙城支行' in html
+            assert '试点库现有 5 个小区、2 家银行、1 台 ATM；尚未覆盖周边全部地点' in html
             token = re.search(r'name="token" value="([^"]+)"', html).group(1)
             db = sqlite3.connect(str(folder / 'data/check.sqlite'))
             assert db.execute("SELECT kind, COUNT(*) FROM places GROUP BY kind ORDER BY kind").fetchall() == [
