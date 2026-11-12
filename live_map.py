@@ -92,24 +92,32 @@ def map_widget(community, rows, radius, config, fallback, school=None):
     if (finished) return;
     try {
       if (!window.AMap) throw new Error();
-      async function convertGps(position) {
-        const query = new URLSearchParams({locations:position.join(','), coordsys:'gps', output:'json'});
-        const response = await fetch('/_AMapService/v3/assistant/coordinate/convert?' + query);
-        if (!response.ok) throw new Error('conversion:http');
-        const result = await response.json();
-        if (result.status !== '1' || typeof result.locations !== 'string')
-          throw new Error('conversion:service');
-        const converted = result.locations.split(',').map(Number);
-        if (converted.length !== 2 || !converted.every(Number.isFinite))
-          throw new Error('conversion:coordinates');
+      async function convertGpsList(input) {
+        const converted = [];
+        // The provider accepts up to 40 GPS points in one conversion request.
+        for (let start = 0; start < input.length; start += 40) {
+          const batch = input.slice(start, start + 40);
+          const locations = batch.map(position => position.map(value => Number(value).toFixed(6)).join(',')).join('|');
+          const query = new URLSearchParams({locations, coordsys:'gps', output:'json'});
+          const response = await fetch('/_AMapService/v3/assistant/coordinate/convert?' + query);
+          if (!response.ok) throw new Error('conversion:http');
+          const result = await response.json();
+          if (result.status !== '1' || typeof result.locations !== 'string')
+            throw new Error('conversion:service');
+          const points = result.locations.split(';').map(value => value.split(',').map(Number));
+          if (points.length !== batch.length || points.some(point => point.length !== 2 || !point.every(Number.isFinite)))
+            throw new Error('conversion:coordinates');
+          converted.push(...points);
+        }
         return converted;
       }
-      const positions = [];
-      // Convert each reference point explicitly; keep results in memory only.
-      for (const point of data.points) {
-        if (finished) return;
-        positions.push(await convertGps(point.position));
-      }
+      status.textContent = '正在准备地图位置…';
+      const hasSchool = Array.isArray(data.school) && data.school.length === 2;
+      const converted = await convertGpsList([
+        ...data.points.map(point => point.position),
+        ...(hasSchool ? [data.school] : [])
+      ]);
+      const positions = converted.slice(0, data.points.length);
       if (finished) return;
       map = new AMap.Map('live-map', {center: positions[0], zoom: 14, viewMode: '2D'});
       const circle = new AMap.Circle({center:positions[0], radius:data.radius,
@@ -143,7 +151,7 @@ def map_widget(community, rows, radius, config, fallback, school=None):
       });
       const reset = document.getElementById('map-reset');
       reset.onclick = () => map.setFitView([circle, ...markers], false, [35,35,35,35]);
-      if (Array.isArray(data.school) && data.school.length === 2) {
+      if (hasSchool) {
         const livePanel = document.getElementById('amap-live-search');
         const searchStatus = document.getElementById('amap-search-status');
         const resultPanel = document.getElementById('amap-search-results');
@@ -156,7 +164,7 @@ def map_widget(community, rows, radius, config, fallback, school=None):
         const searchButtons = [...document.querySelectorAll('[data-amap-search]')];
         liveResults.insertBefore(resultPanel, pager);
         let searchMarkers = [];
-        let schoolCenter = null;
+        let schoolCenter = converted[data.points.length];
         let activeKeyword = '', currentPage = 0, totalPages = 0, requestId = 0;
         livePanel.hidden = false;
         function clearResults() {
@@ -171,8 +179,6 @@ def map_widget(community, rows, radius, config, fallback, school=None):
           clearResults(); liveResults.hidden = true;
           searchStatus.textContent = '正在查询学校附近的' + keyword + '（第 ' + page + ' 页）…';
           try {
-            if (!schoolCenter) schoolCenter = await convertGps(data.school);
-            if (thisRequest !== requestId) return;
             const query = new URLSearchParams({location:schoolCenter.join(','), radius:'3000',
               keywords:keyword, offset:'20', page:String(page), output:'json'});
             const response = await fetch('/_AMapService/v3/place/around?' + query);
