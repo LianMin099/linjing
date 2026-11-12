@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import warnings
 
-from map_config import CONFIG_PATH, save_config
+from map_config import CONFIG_PATH, load_config, save_config
 
 
 def check_git_exclusion():
@@ -37,7 +37,8 @@ def main():
             warnings.simplefilter('error', getpass.GetPassWarning)
             key = getpass.getpass('粘贴网页地图 Key：').strip()
             code = getpass.getpass('粘贴对应的安全密钥：').strip()
-        save_config({'js_key': key, 'security_code': code})
+            web_key = getpass.getpass('粘贴 Web 服务 Key（可留空）：').strip()
+        save_config({'js_key': key, 'security_code': code, 'web_key': web_key})
         print('配置已保存。请告诉 Codex「配置好了」，不要发送具体值。')
         return 0
     except (KeyboardInterrupt, EOFError):

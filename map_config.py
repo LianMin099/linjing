@@ -19,6 +19,13 @@ def validate_config(config):
         result[name] = value
     if result['js_key'] == result['security_code']:
         raise ValueError('两项内容相同。请分别复制 Key 和安全密钥。')
+    web_key = config.get('web_key', '')
+    if web_key:
+        if not isinstance(web_key, str) or not re.fullmatch(r'[A-Za-z0-9_-]{16,128}', web_key):
+            raise ValueError('Web 服务 Key 格式不正确。')
+        if web_key in result.values():
+            raise ValueError('Web 服务 Key 需要与网页地图 Key 和安全密钥不同。')
+        result['web_key'] = web_key
     return result
 
 

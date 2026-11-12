@@ -25,7 +25,13 @@ def proxy_response(request_path, config):
     callback = dict(params).get('callback')
     if callback and not re.fullmatch(r'[A-Za-z_$][A-Za-z0-9_$.]*', callback):
         raise ValueError('Invalid callback')
-    params.extend([('key', config['js_key']), ('jscode', config['security_code'])])
+    web_request = parsed.path in ('/_AMapService/v3/assistant/coordinate/convert',
+                                  '/_AMapService/v3/place/around')
+    if web_request and not config.get('web_key'):
+        raise ValueError('Web service key is not configured')
+    params.append(('key', config['web_key'] if web_request else config['js_key']))
+    if not web_request:
+        params.append(('jscode', config['security_code']))
     url = routes[parsed.path] + '?' + urlencode(params)
     with build_opener(NoRedirect()).open(Request(url), timeout=10) as response:
         body = response.read(2 * 1024 * 1024 + 1)
@@ -41,6 +47,8 @@ def proxy_response(request_path, config):
 def map_widget(community, rows, radius, config, fallback, school=None):
     if not config:
         return '<p class="map-status">未配置在线地图，当前显示位置示意图。</p>' + fallback
+    if not config.get('web_key'):
+        return '<p class="map-status">在线地图还缺少高德 Web 服务 Key。请运行「配置地图.cmd」补填后重新启动。</p>' + fallback
     points = [dict(id=community['id'], name=community['name'], kind='community',
                    position=[community['longitude'], community['latitude']])]
     points += [dict(id=row['id'], name=row['name'], kind=row['kind'],
