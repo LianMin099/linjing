@@ -68,6 +68,7 @@ PILOT_CSS += """
 #amap-live-search{padding:16px;background:#fff;border-top:1px solid #e8e4f2}#amap-live-search h4{margin:0 0 6px;font-size:15px}#amap-live-search p{margin:6px 0 12px;font-size:12px;color:#706b81}#amap-live-search button{margin:0 6px 8px 0;padding:8px 12px;border-radius:9px;background:#eeebfa;color:#594891;font-size:12px}#amap-live-search button:disabled{opacity:.55}#amap-search-results{max-height:320px;overflow:auto;font-size:12px}#amap-live-search[hidden]{display:none}
 #amap-search-results .amap-result{display:flex;flex-direction:column;padding:9px 4px;border-top:1px solid #eeeaf6;cursor:pointer}#amap-search-results .amap-result span{color:#706b81}
 #amap-live-results{padding:18px;background:#fff;border:1px solid #dcd3f4;border-radius:14px;margin-bottom:18px;scroll-margin-top:20px}#amap-live-results[hidden]{display:none}#amap-live-results h3{margin:0;font-size:16px;color:#58478d}#amap-live-results p{margin:5px 0 12px;font-size:11px;color:#827b98}#amap-live-results #amap-search-results{max-height:410px}
+#amap-live-pager{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 0 2px;font-size:12px;color:#655c78}#amap-live-pager[hidden]{display:none}#amap-live-pager button{padding:7px 12px;border-radius:8px;background:#eeebfa;color:#594891}#amap-live-pager button:disabled{opacity:.45;cursor:not-allowed}
 """
 
 PILOT_CSS += """

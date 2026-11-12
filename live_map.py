@@ -149,29 +149,38 @@ def map_widget(community, rows, radius, config, fallback, school=None):
         const resultPanel = document.getElementById('amap-search-results');
         const liveResults = document.getElementById('amap-live-results');
         const liveCount = document.getElementById('amap-live-count');
-        liveResults.append(resultPanel);
+        const pager = document.getElementById('amap-live-pager');
+        const prevPage = document.getElementById('amap-prev-page');
+        const nextPage = document.getElementById('amap-next-page');
+        const pageLabel = document.getElementById('amap-page-label');
+        const searchButtons = [...document.querySelectorAll('[data-amap-search]')];
+        liveResults.insertBefore(resultPanel, pager);
         let searchMarkers = [];
         let schoolCenter = null;
+        let activeKeyword = '', currentPage = 0, totalPages = 0, requestId = 0;
         livePanel.hidden = false;
         function clearResults() {
           map.remove(searchMarkers);
           searchMarkers = [];
           resultPanel.replaceChildren();
         }
-        document.querySelectorAll('[data-amap-search]').forEach(button => {
-          button.addEventListener('click', async () => {
-            button.disabled = true;
-            searchStatus.textContent = '正在查询学校附近的' + button.dataset.amapSearch + '…';
-            try {
-              if (!schoolCenter) schoolCenter = await convertGps(data.school);
-              const query = new URLSearchParams({location:schoolCenter.join(','), radius:'3000',
-                keywords:button.dataset.amapSearch, offset:'20', page:'1', output:'json'});
-              const response = await fetch('/_AMapService/v3/place/around?' + query);
-              if (!response.ok) throw new Error('http');
-              const result = await response.json();
-              if (result.status !== '1' || !Array.isArray(result.pois)) throw new Error('service');
-              clearResults();
-              for (const poi of result.pois) {
+        async function search(keyword, page) {
+          const thisRequest = ++requestId;
+          searchButtons.forEach(button => { button.disabled = true; });
+          prevPage.disabled = true; nextPage.disabled = true;
+          clearResults(); liveResults.hidden = true;
+          searchStatus.textContent = '正在查询学校附近的' + keyword + '（第 ' + page + ' 页）…';
+          try {
+            if (!schoolCenter) schoolCenter = await convertGps(data.school);
+            if (thisRequest !== requestId) return;
+            const query = new URLSearchParams({location:schoolCenter.join(','), radius:'3000',
+              keywords:keyword, offset:'20', page:String(page), output:'json'});
+            const response = await fetch('/_AMapService/v3/place/around?' + query);
+            if (!response.ok) throw new Error('http');
+            const result = await response.json();
+            if (thisRequest !== requestId) return;
+            if (result.status !== '1' || !Array.isArray(result.pois)) throw new Error('service');
+            for (const poi of result.pois) {
                 const name = String(poi.name || '未命名地点');
                 const address = String(poi.address || '地址未知');
                 const point = String(poi.location || '').split(',').map(Number);
@@ -186,20 +195,40 @@ def map_widget(community, rows, radius, config, fallback, school=None):
                   map.add(marker); searchMarkers.push(marker);
                   item.addEventListener('click', () => map.setZoomAndCenter(16, point));
                 }
-              }
-              searchStatus.textContent = '本页显示 ' + result.pois.length + ' 条高德实时候选；未加入邻境数据库。';
-              liveCount.textContent = String(result.pois.length);
-              liveResults.hidden = false;
-              liveResults.scrollIntoView({block:'start'});
-            } catch (_) {
-              searchStatus.textContent = '学校坐标转换或地点搜索失败，请检查服务权限或稍后再试。';
             }
-            button.disabled = false;
+            const reportedTotal = Number.parseInt(result.count, 10);
+            const total = Number.isFinite(reportedTotal) && reportedTotal >= 0 ? reportedTotal : result.pois.length;
+            activeKeyword = keyword; currentPage = page;
+            totalPages = Math.max(1, Math.ceil(total / 20));
+            liveCount.textContent = String(total) + ' 条候选';
+            pageLabel.textContent = '第 ' + page + ' / ' + totalPages + ' 页 · 本页 ' + result.pois.length + ' 条';
+            pager.hidden = totalPages <= 1;
+            prevPage.disabled = page <= 1;
+            nextPage.disabled = page >= totalPages;
+            searchStatus.textContent = '本页显示 ' + result.pois.length + ' 条高德实时候选；未加入邻境数据库。';
+            liveResults.hidden = false;
+            liveResults.scrollIntoView({block:'start'});
+          } catch (_) {
+            if (thisRequest === requestId)
+              searchStatus.textContent = '学校坐标转换或地点搜索失败，请检查服务权限或稍后再试。';
+          } finally {
+            if (thisRequest === requestId) searchButtons.forEach(button => { button.disabled = false; });
+          }
+        }
+        searchButtons.forEach(button => {
+          button.addEventListener('click', () => {
+            search(button.dataset.amapSearch, 1);
           });
         });
+        prevPage.onclick = () => { if (currentPage > 1) search(activeKeyword, currentPage - 1); };
+        nextPage.onclick = () => { if (currentPage < totalPages) search(activeKeyword, currentPage + 1); };
         document.getElementById('amap-search-clear').onclick = () => {
+          ++requestId;
           clearResults();
           liveResults.hidden = true;
+          pager.hidden = true;
+          activeKeyword = ''; currentPage = 0; totalPages = 0;
+          searchButtons.forEach(button => { button.disabled = false; });
           searchStatus.textContent = '已清除实时结果。';
           reset.onclick();
         };
