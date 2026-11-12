@@ -75,3 +75,24 @@ PILOT_CSS += """
 PILOT_CSS += """
 .verification-state{font-size:11px;color:#9b6848;background:#fff6e9;padding:5px 9px;border-radius:6px;margin:10px 0}.verification-evidence{font-size:11px;color:#797285;margin:8px 0}#verify-panel>p{font-size:12px;color:#706b81;margin:10px 0 18px}#verify-panel form{display:grid;grid-template-columns:1fr 1fr;gap:13px}#verify-panel label{font-size:12px}#verify-panel input,#verify-panel select,#verify-panel textarea{display:block;width:100%;margin-top:5px}#verify-panel textarea{min-height:80px}#verify-panel form button{align-self:end}#verify-panel label:nth-last-of-type(1){grid-column:1/-1}@media(max-width:680px){#verify-panel form{grid-template-columns:1fr}#verify-panel label:nth-last-of-type(1){grid-column:auto}}
 """
+
+
+# Keep saved places below the map/search row so neither column leaves a long gap.
+PILOT_CSS += """
+.query-layout{align-items:stretch}
+.query-layout>section{min-width:0}
+.query-layout:has(>#amap-live-results[hidden]){grid-template-columns:minmax(0,1fr)}
+.query-layout>#amap-live-results{margin-bottom:0;display:flex;flex-direction:column}
+.query-layout>#amap-live-results[hidden]{display:none}
+.query-layout>#amap-live-results #amap-search-results{flex:1;min-height:0;max-height:510px;scrollbar-gutter:stable}
+.query-layout>#amap-live-results #amap-live-pager{margin-top:auto;padding-top:16px}
+.saved-places{margin-top:26px}
+.saved-places>.panel-heading{margin-bottom:14px}
+.saved-places .results-list{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;gap:16px}
+.saved-places .place-head{flex-wrap:wrap;gap:10px}
+.saved-places .place-title{flex-basis:calc(100% - 55px)}
+.saved-places .place-distance{margin-left:51px;font-size:16px;display:flex;align-items:baseline;gap:6px}
+.saved-places .place-distance small{text-align:left}
+@media(max-width:1150px){.saved-places .results-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:680px){.saved-places .results-list{grid-template-columns:minmax(0,1fr)}.saved-places{margin-top:20px}.query-layout>#amap-live-results #amap-search-results{max-height:360px;flex:auto}}
+"""
