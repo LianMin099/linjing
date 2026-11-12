@@ -92,18 +92,23 @@ def map_widget(community, rows, radius, config, fallback, school=None):
     if (finished) return;
     try {
       if (!window.AMap) throw new Error();
+      async function convertGps(position) {
+        const query = new URLSearchParams({locations:position.join(','), coordsys:'gps', output:'json'});
+        const response = await fetch('/_AMapService/v3/assistant/coordinate/convert?' + query);
+        if (!response.ok) throw new Error('conversion:http');
+        const result = await response.json();
+        if (result.status !== '1' || typeof result.locations !== 'string')
+          throw new Error('conversion:service');
+        const converted = result.locations.split(',').map(Number);
+        if (converted.length !== 2 || !converted.every(Number.isFinite))
+          throw new Error('conversion:coordinates');
+        return converted;
+      }
       const positions = [];
       // Convert each reference point explicitly; keep results in memory only.
       for (const point of data.points) {
         if (finished) return;
-        const converted = await new Promise((resolve, reject) => {
-          AMap.convertFrom(point.position, 'gps', (state, result) => {
-            if (state === 'complete' && result.locations && result.locations.length === 1)
-              resolve(result.locations[0]);
-            else reject(new Error('conversion:' + String(result && result.info || state).slice(0, 32)));
-          });
-        });
-        positions.push(converted);
+        positions.push(await convertGps(point.position));
       }
       if (finished) return;
       map = new AMap.Map('live-map', {center: positions[0], zoom: 14, viewMode: '2D'});
@@ -141,48 +146,53 @@ def map_widget(community, rows, radius, config, fallback, school=None):
       if (Array.isArray(data.school) && data.school.length === 2) {
         const livePanel = document.getElementById('amap-live-search');
         const searchStatus = document.getElementById('amap-search-status');
-        let placeSearch = null;
+        const resultPanel = document.getElementById('amap-search-results');
+        let searchMarkers = [];
         let schoolCenter = null;
         livePanel.hidden = false;
-        AMap.plugin('AMap.PlaceSearch', () => {
-          if (!window.AMap || !AMap.PlaceSearch) {
-            searchStatus.textContent = '地点搜索插件不可用，请检查网页地图 Key 的服务权限。';
-            return;
-          }
-          placeSearch = new AMap.PlaceSearch({city:'440307', citylimit:true,
-            pageSize:20, pageIndex:1, map:map, panel:'amap-search-results', autoFitView:false});
-        });
+        function clearResults() {
+          map.remove(searchMarkers);
+          searchMarkers = [];
+          resultPanel.replaceChildren();
+        }
         document.querySelectorAll('[data-amap-search]').forEach(button => {
           button.addEventListener('click', async () => {
-            if (!placeSearch) { searchStatus.textContent = '搜索服务还在加载，请稍后再试。'; return; }
             button.disabled = true;
             searchStatus.textContent = '正在查询学校附近的' + button.dataset.amapSearch + '…';
             try {
-              if (!schoolCenter) {
-                schoolCenter = await new Promise((resolve, reject) => {
-                  AMap.convertFrom(data.school, 'gps', (state, result) => {
-                    if (state === 'complete' && result.locations && result.locations.length === 1)
-                      resolve(result.locations[0]);
-                    else reject(new Error('school conversion'));
-                  });
-                });
+              if (!schoolCenter) schoolCenter = await convertGps(data.school);
+              const query = new URLSearchParams({location:schoolCenter.join(','), radius:'3000',
+                keywords:button.dataset.amapSearch, offset:'20', page:'1', output:'json'});
+              const response = await fetch('/_AMapService/v3/place/around?' + query);
+              if (!response.ok) throw new Error('http');
+              const result = await response.json();
+              if (result.status !== '1' || !Array.isArray(result.pois)) throw new Error('service');
+              clearResults();
+              for (const poi of result.pois) {
+                const name = String(poi.name || '未命名地点');
+                const address = String(poi.address || '地址未知');
+                const point = String(poi.location || '').split(',').map(Number);
+                const item = document.createElement('div');
+                item.className = 'amap-result';
+                const title = document.createElement('strong'); title.textContent = name;
+                const detail = document.createElement('span'); detail.textContent = address;
+                item.append(title, detail); resultPanel.append(item);
+                if (point.length === 2 && point.every(Number.isFinite)) {
+                  const marker = new AMap.Marker({position:point, title:name});
+                  marker.on('click', () => { searchStatus.textContent = name + ' · 高德实时候选'; });
+                  map.add(marker); searchMarkers.push(marker);
+                  item.addEventListener('click', () => map.setZoomAndCenter(16, point));
+                }
               }
-              placeSearch.setType(button.dataset.amapSearch === '银行' ? '金融保险服务' : '商务住宅');
-              placeSearch.searchNearBy(button.dataset.amapSearch, schoolCenter, 3000, (state, result) => {
-                if (state === 'complete') searchStatus.textContent = '已显示高德实时结果；名称、类别及营业状态仍需判断。';
-                else if (state === 'no_data') searchStatus.textContent = '高德本次没有返回匹配地点。';
-                else searchStatus.textContent = '搜索失败，请检查服务权限或稍后再试。';
-                button.disabled = false;
-              });
+              searchStatus.textContent = '本页显示 ' + result.pois.length + ' 条高德实时候选；未加入邻境数据库。';
             } catch (_) {
-              searchStatus.textContent = '学校坐标转换失败，暂时无法搜索。';
-              button.disabled = false;
+              searchStatus.textContent = '学校坐标转换或地点搜索失败，请检查服务权限或稍后再试。';
             }
+            button.disabled = false;
           });
         });
         document.getElementById('amap-search-clear').onclick = () => {
-          if (placeSearch) placeSearch.clear();
-          document.getElementById('amap-search-results').replaceChildren();
+          clearResults();
           searchStatus.textContent = '已清除实时结果。';
           reset.onclick();
         };
