@@ -25,7 +25,8 @@ def proxy_response(request_path, config):
     callback = dict(params).get('callback')
     if callback and not re.fullmatch(r'[A-Za-z_$][A-Za-z0-9_$.]*', callback):
         raise ValueError('Invalid callback')
-    web_request = parsed.path in ('/_AMapService/v3/assistant/coordinate/convert',
+    web_request = parsed.path in ('/_AMapService/v3/log/init',
+                                  '/_AMapService/v3/assistant/coordinate/convert',
                                   '/_AMapService/v3/place/around')
     if web_request and not config.get('web_key'):
         raise ValueError('Web service key is not configured')
@@ -99,7 +100,7 @@ def map_widget(community, rows, radius, config, fallback, school=None):
           AMap.convertFrom(point.position, 'gps', (state, result) => {
             if (state === 'complete' && result.locations && result.locations.length === 1)
               resolve(result.locations[0]);
-            else reject(new Error('conversion'));
+            else reject(new Error('conversion:' + String(result && result.info || state).slice(0, 32)));
           });
         });
         positions.push(converted);
