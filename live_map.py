@@ -200,7 +200,7 @@ def map_widget(community, rows, radius, config, fallback, school=None):
             const total = Number.isFinite(reportedTotal) && reportedTotal >= 0 ? reportedTotal : result.pois.length;
             activeKeyword = keyword; currentPage = page;
             totalPages = Math.max(1, Math.ceil(total / 20));
-            liveCount.textContent = String(total) + ' 条候选';
+            liveCount.textContent = '接口约 ' + String(total) + ' 条';
             pageLabel.textContent = '第 ' + page + ' / ' + totalPages + ' 页 · 本页 ' + result.pois.length + ' 条';
             pager.hidden = totalPages <= 1;
             prevPage.disabled = page <= 1;
