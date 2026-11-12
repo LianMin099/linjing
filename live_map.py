@@ -147,6 +147,9 @@ def map_widget(community, rows, radius, config, fallback, school=None):
         const livePanel = document.getElementById('amap-live-search');
         const searchStatus = document.getElementById('amap-search-status');
         const resultPanel = document.getElementById('amap-search-results');
+        const liveResults = document.getElementById('amap-live-results');
+        const liveCount = document.getElementById('amap-live-count');
+        liveResults.append(resultPanel);
         let searchMarkers = [];
         let schoolCenter = null;
         livePanel.hidden = false;
@@ -185,6 +188,9 @@ def map_widget(community, rows, radius, config, fallback, school=None):
                 }
               }
               searchStatus.textContent = '本页显示 ' + result.pois.length + ' 条高德实时候选；未加入邻境数据库。';
+              liveCount.textContent = String(result.pois.length);
+              liveResults.hidden = false;
+              liveResults.scrollIntoView({block:'start'});
             } catch (_) {
               searchStatus.textContent = '学校坐标转换或地点搜索失败，请检查服务权限或稍后再试。';
             }
@@ -193,6 +199,7 @@ def map_widget(community, rows, radius, config, fallback, school=None):
         });
         document.getElementById('amap-search-clear').onclick = () => {
           clearResults();
+          liveResults.hidden = true;
           searchStatus.textContent = '已清除实时结果。';
           reset.onclick();
         };
