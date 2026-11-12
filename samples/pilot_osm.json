@@ -16,6 +16,7 @@
     {"source_id":"way/1170469872:srcb-longcheng-building-area","kind":"bank","name":"深圳农村商业银行龙城支行","address":"深圳市龙岗区龙岗大道（龙岗段）1099号2栋1层1号；坐标为中粮祥云国际写字楼2栋建筑参考点，非网点入口","longitude":114.2275,"latitude":22.69869},
     {"source_id":"way/356926336","kind":"community","name":"京基·御景中央花园（二期）","address":"深圳市龙岗区龙城街道飞扬路京基御景中央花园二期；坐标为二期区域参考点，非小区入口","longitude":114.20335,"latitude":22.70861},
     {"source_id":"way/357134256","kind":"community","name":"睿智华庭","address":"深圳市龙岗区龙城街道龙飞大道503号；坐标为小区区域参考点，非入口","longitude":114.20475,"latitude":22.70863},
-    {"source_id":"way/1414021722","kind":"community","name":"阳光·天健城","address":"深圳市龙岗区龙城街道黄阁路与沙园路交汇处；坐标为小区区域参考点，非入口","longitude":114.21569,"latitude":22.70431}
+    {"source_id":"way/1414021722","kind":"community","name":"阳光·天健城","address":"深圳市龙岗区龙城街道黄阁路与沙园路交汇处；坐标为小区区域参考点，非入口","longitude":114.21569,"latitude":22.70431},
+    {"source_id":"node/6824674662:huangge-cuiyuan-bus-stop-reference","kind":"community","name":"黄阁翠苑","address":"深圳市龙岗区龙城街道龙红格社区；坐标为同名公交站参考点，非小区中心或入口","longitude":114.21378,"latitude":22.71332}
   ]
 }

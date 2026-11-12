@@ -54,23 +54,28 @@ def main():
         process = None
         try:
             process, url, code, first_line = start(folder)
-            assert first_line == 'Samples: 8 added, 0 already present.', first_line
+            assert first_line == 'Samples: 9 added, 0 already present.', first_line
             opener = build_opener(HTTPCookieProcessor(CookieJar()))
             with opener.open(url + '/', timeout=5) as response:
                 html = response.read().decode('utf-8')
             assert '当前结果 · 3 处' in html and '深圳农村商业银行龙城支行' in html
-            assert '试点库现有 5 个小区、2 家银行、1 台 ATM；尚未覆盖周边全部地点' in html
+            assert '试点库现有 6 个小区、2 家银行、1 台 ATM；尚未覆盖周边全部地点' in html
             token = re.search(r'name="token" value="([^"]+)"', html).group(1)
             db = sqlite3.connect(str(folder / 'data/check.sqlite'))
             assert db.execute("SELECT kind, COUNT(*) FROM places GROUP BY kind ORDER BY kind").fetchall() == [
-                ('atm', 1), ('bank', 2), ('community', 5)]
+                ('atm', 1), ('bank', 2), ('community', 6)]
             bank_id = db.execute("SELECT id FROM places WHERE name = '深圳农村商业银行龙城支行'").fetchone()[0]
             community_id = db.execute("SELECT id FROM places WHERE kind = 'community' ORDER BY id LIMIT 1").fetchone()[0]
+            huangge_id = db.execute("SELECT id FROM places WHERE name = '黄阁翠苑'").fetchone()[0]
             original = db.execute('SELECT address FROM places WHERE id = ?', (bank_id,)).fetchone()[0]
             proposed = original + '（临时验证，不作为真实地址）'
             db.close()
             with opener.open(url + '/?community={}&radius=3000&kind=all'.format(community_id), timeout=5) as response:
                 assert '当前结果 · 3 处' in response.read().decode('utf-8')
+            with opener.open(url + '/?community={}&radius=3000&kind=all'.format(huangge_id), timeout=5) as response:
+                assert '当前结果 · 3 处' in response.read().decode('utf-8')
+            with opener.open(url + '/?community={}&radius=1000&kind=all'.format(huangge_id), timeout=5) as response:
+                assert '当前结果 · 0 处' in response.read().decode('utf-8')
             db = sqlite3.connect(str(folder / 'data/check.sqlite'))
             assert db.execute('SELECT search_count FROM query_interests WHERE community_id = ?',
                               (community_id,)).fetchone()[0] == 1
@@ -93,11 +98,11 @@ def main():
             process.wait(timeout=5)
             process = None
             process, url, code, first_line = start(folder)
-            assert first_line == 'Samples: 0 added, 8 already present.', first_line
+            assert first_line == 'Samples: 0 added, 9 already present.', first_line
             db = sqlite3.connect(str(folder / 'data/check.sqlite'))
             assert db.execute('SELECT address, version FROM places WHERE id = ?', (bank_id,)).fetchone() == (proposed, 2)
             db.close()
-            print('通过：独立目录启动、8 条导入、查询、待审核不改址、管理员审核、重启保留修订。')
+            print('通过：独立目录启动、9 条导入、查询、待审核不改址、管理员审核、重启保留修订。')
             print('所有测试数据位于自动清理的临时目录；未使用本机试玩数据库或地图密钥。')
         finally:
             if process is not None:
