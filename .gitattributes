@@ -1,0 +1,2 @@
+*.pdf -diff -text
+*.jpg -diff -text
