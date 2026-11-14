@@ -51,20 +51,21 @@ def footer(canvas, doc):
     canvas.saveState()
     canvas.setFont("SimHei", 8)
     canvas.setFillColor(GREY)
-    canvas.drawString(18 * mm, 13 * mm, "邻境 · 赛题四 · 初步验证证据 · 2026-11-13")
+    canvas.drawString(18 * mm, 13 * mm, "邻境 · 赛题四 · 初步验证证据 · 2026-11-14")
     canvas.drawRightString(279 * mm, 13 * mm, str(doc.page))
     canvas.restoreState()
 
 
 story = [
     para("邻境 · 初步验证证据", TITLE),
-    para("试点：深圳信息职业技术大学周边约 3 公里。此文件与《邻境_初赛设计说明.pdf》及源码仓库配套阅读。", BODY),
+    para("试点：以 OSM 学校面历史代表点 WGS84 114.210700, 22.687940 为圆心约 3 公里；此点不是校门。此文件与设计说明及源码仓库配套阅读。", BODY),
     para("1. 真实接口的初步验证", SECTION),
     para("2026-11-06 使用参赛者自己的高德 Web 服务 Key，先确认学校主体，再查询学校周边银行与小区。两类各取得第一页 10 条候选；名称、地址和有效坐标在各自样本中均为 10/10。银行电话为 6/10，小区电话为 1/10。工具不保存 Key 和原始候选列表。", BODY),
     para("这只证明接口连通和字段可得，不证明地点真实、类别准确、当前营业或全部覆盖；原始候选也未直接写入试点数据库。", SMALL),
     para("2. 从空库复现业务闭环", SECTION),
     para("2026-11-13 在独立临时数据库运行验证：首次导入 9 条附来源说明的样本（6 个小区、2 家银行、1 台 ATM）；查询返回已入库设施；纠错提交后仍显示原地址；管理员审核通过后更新地址与版本；服务重启后修订仍保留。命令为 python -B verify_clean_launch.py。", BODY),
     para("截图来自另一份独立演示库的实际浏览器操作。演示地址明确标为临时验证；它不是真实地点资料。本机试玩数据库未参与。", SMALL),
+    para("2026-11-14 另在临时库验证本机 JSON 定时读取、候选暂存、管理员确认后入库、增量版本、人工地址保护和失败重试；来源内容的变化仅为模拟，未取得外部接口持久化采集的许可证明。", BODY),
     para("3. 可核对的原始记录", SECTION),
 ]
 
@@ -74,6 +75,7 @@ rows = [
     ["本机业务闭环复现_20261113.md", "干净目录自动检查、浏览器彩排和重启记录"],
     ["01 至 04 浏览器截图", "查询、待审核、审核通过、版本更新的页面状态"],
     ["samples/README.md", "9 条试点样本的来源、坐标性质和限制"],
+    ["本机采集任务复现_20261114.md", "本机文件任务与模拟增量变更；不代表外部接口许可"],
 ]
 table = Table([[para(cell, CELL) for cell in row] for row in rows], colWidths=[66 * mm, 108 * mm])
 table.setStyle(TableStyle([
@@ -85,7 +87,7 @@ table.setStyle(TableStyle([
     ("TOPPADDING", (0, 0), (-1, -1), 6),
     ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
 ]))
-story.extend([table, Spacer(1, 5 * mm), para("源码 ZIP 中保留这些原始记录和截图，便于按文件名逐项复查。", SMALL)])
+story.append(table)
 story.append(PageBreak())
 story.extend(screenshot("01-查询结果.jpg", "4. 查询结果：原地址、版本 1、未核验"))
 story.append(PageBreak())
@@ -99,6 +101,7 @@ story.extend([
 ])
 
 doc = SimpleDocTemplate(str(OUTPUT), pagesize=landscape(A4), leftMargin=18 * mm, rightMargin=18 * mm,
-                        topMargin=20 * mm, bottomMargin=20 * mm)
+                        topMargin=20 * mm, bottomMargin=20 * mm,
+                        title='邻境·初步验证证据', author='邻境项目组', subject='赛题四本机初步验证')
 doc.build(story, onFirstPage=footer, onLaterPages=footer)
 print(OUTPUT)

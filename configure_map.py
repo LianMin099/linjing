@@ -18,7 +18,7 @@ def check_git_exclusion():
     tracked = subprocess.run(git + ['ls-files', '--error-unmatch', relative], cwd=str(root),
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if ignored.returncode != 0 or tracked.returncode != 1:
-        raise ValueError('未能确认配置文件已排除 Git 上传，暂不保存。请让 Codex 检查。')
+        raise ValueError('未能确认配置文件已排除 Git 上传，暂不保存。请查看 README 或联系开发者。')
 
 
 def main():
@@ -39,7 +39,7 @@ def main():
             code = getpass.getpass('粘贴对应的安全密钥：').strip()
             web_key = getpass.getpass('粘贴 Web 服务 Key（可留空）：').strip()
         save_config({'js_key': key, 'security_code': code, 'web_key': web_key})
-        print('配置已保存。请告诉 Codex「配置好了」，不要发送具体值。')
+        print('配置已保存。请重启应用，不要分享 Key 或安全密钥。')
         return 0
     except (KeyboardInterrupt, EOFError):
         print('\n已取消，未保存新配置。')

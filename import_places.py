@@ -61,6 +61,15 @@ def validate_dataset(dataset):
                 raise ValueError('kind 必须是 bank、atm 或 community')
             name = required_text(place, 'name')
             address = required_text(place, 'address')
+            if 'source_url' in place:
+                source_link(place, 'source_url')
+            if 'permission_url' in place:
+                source_link(place, 'permission_url')
+            if 'coordinate_system' in place and place['coordinate_system'] != 'WGS84':
+                raise ValueError('地点坐标系必须与学校一致')
+            if 'collected_at' in place and place['collected_at'] is not None:
+                if not isinstance(place['collected_at'], str) or not place['collected_at'].strip():
+                    raise ValueError('采集时间应为非空文字或 null')
             point = coordinates(place)
             if distance_m(center, point) > 3000:
                 raise ValueError('超过学校周边 3 公里')
@@ -74,7 +83,7 @@ def validate_dataset(dataset):
 
 
 def import_dataset(db, metadata, rows):
-    """同一来源编号只导入一次，已有地点交由纠错流程修改。"""
+    """按来源编号增量合并；人工审核通过的地址不被来源数据覆盖。"""
     source, permission, school_source, school_permission, school_lon, school_lat = metadata
     with db:
         db.execute('BEGIN IMMEDIATE')
@@ -93,10 +102,35 @@ def import_dataset(db, metadata, rows):
                 PRIMARY KEY (source_url, source_id)
             )
         ''')
+        db.execute('''CREATE TABLE IF NOT EXISTS place_changes (
+            id INTEGER PRIMARY KEY,
+            place_id INTEGER NOT NULL REFERENCES places(id),
+            old_version INTEGER NOT NULL,
+            new_version INTEGER NOT NULL,
+            source_url TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            changed_fields TEXT NOT NULL,
+            collected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )''')
         added = 0
         for external_id, kind, name, address, longitude, latitude in rows:
-            if db.execute('SELECT 1 FROM place_imports WHERE source_url = ? AND source_id = ?',
-                          (source, external_id)).fetchone():
+            existing = db.execute('''SELECT p.* FROM place_imports i JOIN places p ON p.id=i.place_id
+                WHERE i.source_url=? AND i.source_id=?''', (source, external_id)).fetchone()
+            if existing:
+                protected = db.execute('''SELECT 1 FROM corrections WHERE place_id=? AND status='approved'
+                    LIMIT 1''', (existing['id'],)).fetchone() is not None
+                candidate = dict(kind=kind, name=name, address=existing['address'] if protected else address,
+                                 longitude=longitude, latitude=latitude)
+                changed = [field for field, value in candidate.items() if existing[field] != value]
+                if changed:
+                    db.execute('''UPDATE places SET kind=?, name=?, address=?, longitude=?, latitude=?,
+                        version=version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?''',
+                        (candidate['kind'], candidate['name'], candidate['address'],
+                         candidate['longitude'], candidate['latitude'], existing['id']))
+                    db.execute('''INSERT INTO place_changes
+                        (place_id,old_version,new_version,source_url,source_id,changed_fields)
+                        VALUES (?,?,?,?,?,?)''', (existing['id'], existing['version'], existing['version'] + 1,
+                                                 source, external_id, ', '.join(changed)))
                 continue
             record = db.execute('''
                 INSERT INTO places (kind, name, address, longitude, latitude, source)

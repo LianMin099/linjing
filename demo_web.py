@@ -17,7 +17,8 @@ from map_config import load_config
 from live_map import map_widget, proxy_response
 from ui_assets import PILOT_CSS, CITY_ART, icon
 from demo_workflow import seed_demo
-from import_places import import_dataset, validate_dataset
+from collection_jobs import (create_file_job, create_upload_job, ensure_tables,
+                             review_candidate, run_due_jobs, run_job)
 from linjing_db import (connect, ensure_verification_table, ensure_query_interest_table,
                         latest_verifications, nearby_banks, nearby_communities, priority_queue,
                         record_query_interest, record_verification, review_correction,
@@ -35,7 +36,7 @@ NOTICES = {'submitted': '建议已提交。审核通过前，查询仍显示原�
            'pilot-only': '管理员登录在真实地点查询页，请运行「打开真实地点查询.cmd」。'}
 ADMIN_COOKIE = 'linjing_admin'
 PLACE_TYPES = {'all': '银行和 ATM', 'bank': '仅银行网点', 'atm': '仅 ATM'}
-FORM_PATHS = ('/correction', '/review', '/login', '/logout', '/import', '/verify')
+FORM_PATHS = ('/correction', '/review', '/login', '/logout', '/import', '/verify', '/candidate', '/retry')
 MAX_IMPORT_BYTES = 65536
 
 
@@ -219,14 +220,14 @@ def community_links(db, place):
 
 def import_panel(hidden):
     return f"""
-<section class="surface" id="import-panel"><h2>手动导入地点</h2>
-<p>选择已核对来源和使用依据的 JSON 文件。已有来源编号会跳过，保留已审核的修改。</p>
+<section class="surface" id="import-panel"><h2>手动采集候选</h2>
+<p>选择有来源及使用依据的 JSON 文件。提交后只进入候选区，管理员核对许可、位置和类别后才能入库；高德临时搜索结果不要粘贴在这里。</p>
 <form method="post" action="/import">{hidden}
 <label>选择 JSON 文件 <input type="file" id="import-file" accept=".json,application/json"></label>
 <label for="import-data">文件内容（也可以直接粘贴）</label>
 <textarea id="import-data" name="dataset" rows="4" required></textarea>
 <p id="import-feedback" role="status"></p>
-<button>校验并导入</button></form>
+<button>校验并生成待审核候选</button></form>
 <script>
 document.getElementById("import-file").addEventListener("change", async (event) => {{
   const file = event.target.files[0];
@@ -247,6 +248,41 @@ document.getElementById("import-file").addEventListener("change", async (event) 
   }}
 }});
 </script></section>"""
+
+
+def collection_panel(db, hidden):
+    jobs = db.execute('SELECT * FROM collection_jobs ORDER BY id DESC LIMIT 15').fetchall()
+    candidates = db.execute('''SELECT c.*, j.source_type FROM collection_candidates c
+        JOIN collection_jobs j ON j.id=c.job_id WHERE c.status='pending'
+        ORDER BY c.id DESC LIMIT 30''').fetchall()
+    state = {'pending': '待采集', 'running': '执行中', 'success': '成功', 'failed': '失败'}
+    job_rows = ''.join(
+        '<li><strong>任务 {} · {}</strong> · {} · 开始 {} · 结束 {} · 新候选 {}{}{}</li>'.format(
+            job['id'], '本机文件' if job['source_type'] == 'local_json' else '手动上传',
+            state[job['status']], escape(job['started_at'] or '未开始'),
+            escape(job['finished_at'] or '未结束'), job['candidate_count'],
+            ' · 原因：' + escape(job['error']) if job['error'] else '',
+            (f'<form method="post" action="/retry">{hidden}<input type="hidden" name="job_id" value="{job["id"]}"><button>重试</button></form>'
+             if job['status'] == 'failed' and job['source_type'] == 'local_json' else ''))
+        for job in jobs)
+    candidate_rows = []
+    for candidate in candidates:
+        item = json.loads(candidate['dataset_json'])['places'][0]
+        source_url = item.get('source_url', candidate['source_url'])
+        candidate_rows.append(
+            f'<li><strong>{escape(item["name"])}</strong> · {escape(item["kind"])} · '
+            f'{escape(item["address"])} · 来源编号 {escape(candidate["source_id"])} · '
+            f'<a href="{escape(source_url, quote=True)}" rel="noopener noreferrer">来源</a>'
+            f'<form method="post" action="/candidate">{hidden}'
+            f'<input type="hidden" name="candidate_id" value="{candidate["id"]}">'
+            '<label><input type="checkbox" name="permission_confirmed" value="yes">'
+            '我已核对来源许可与地点信息，允许持久保存</label>'
+            '<button name="decision" value="accept">确认入库或更新</button>'
+            '<button name="decision" value="reject">驳回</button></form></li>')
+    return ('<section class="surface" id="collection-panel"><h2>采集任务与候选审核</h2>'
+            '<p>定时任务只在本机程序运行时触发；失败原因保留，可手动重试。查询热度只影响人工复核顺序。</p>'
+            '<h3>任务记录</h3><ol>' + (job_rows or '<li>暂无任务</li>') + '</ol>'
+            '<h3>待审核候选</h3><ol>' + (''.join(candidate_rows) or '<li>暂无候选</li>') + '</ol></section>')
 
 
 
@@ -339,7 +375,7 @@ def pilot_page(db, token, radius, notice, is_admin, filters, map_config=None):
 <section class="hero"><div class="hero-copy"><div class="eyebrow">A LITTLE CLOSER TO YOUR NEIGHBORHOOD</div><h2>熟悉一座城，<br>从<em>身边的每一处</em>开始。</h2><p>发现小区附近的银行与 ATM，让每次出发都有据可依。</p><a class="hero-link" href="#query">探索我的周边 {icon('arrow')}</a></div>{CITY_ART}</section>
 {message}
 <section class="surface" id="query"><div class="query-header"><h2 class="section-label">{icon('search')} 发现附近</h2><span class="subtle-label">选择一个小区，开启周边探索</span></div>
-<form class="filters" method="get" action="/"><label>所在小区<select name="community">{community_options}</select></label><label>探索范围<select name="radius">{options}</select></label><label>设施类型<select name="kind">{kind_options}</select></label><button>{icon('search')}查已入库地点</button></form>{'<p class="query-help">想看更多地点？请在下方地图点击「查银行」或「查小区」。高德实时结果可翻页，仅临时显示。</p>' if map_config else ''}</section>
+<form class="filters" method="get" action="/"><label>所在小区<select name="community">{community_options}</select></label><label>探索范围<select name="radius">{options}</select></label><label>设施类型<select name="kind">{kind_options}</select></label><button>{icon('search')}查已入库地点</button></form><p class="query-help">试点样本按学校面历史参考点（WGS84 114.210700, 22.687940）选取，参考点不是校门；筛选距离按所选小区代表点计算。</p>{'<p class="query-help">想看更多地点？请在下方地图点击「查银行」或「查小区」。高德实时结果可翻页，仅临时显示。</p>' if map_config else ''}</section>
 <section class="query-stats" aria-label="当前查询统计"><div><strong>当前结果 · {len(rows)} 处</strong><p>试点库现有 {inventory.get('community', 0)} 个小区、{inventory.get('bank', 0)} 家银行、{inventory.get('atm', 0)} 台 ATM；尚未覆盖周边全部地点。当前结果随小区、范围和类型筛选变化。</p></div><div class="stat-bars">{chart}</div></section>
 <div class="query-layout"><div class="map-panel"><div class="panel-heading"><h3 class="section-label">{icon('compass')} 周边分布</h3><small>{"高德地图 · 参考点" if map_config else "相对位置示意"}</small></div><div class="map-shell"><span class="map-label">{escape(community['name'])} · {radius:,} m</span>{map_widget(community, rows, radius, map_config, location_diagram(community, rows, radius), school)}</div><div class="map-legend"><span><i class="legend-dot" style="background:#7da58c"></i>所选小区</span><span><i class="legend-dot" style="background:#8871cd"></i>银行网点</span><span><i class="legend-dot" style="background:#c99c5d"></i>ATM</span></div></div>
 <section id="amap-live-results" hidden><h3>高德实时结果 <span id="amap-live-count" class="count"></span></h3><p>学校周边 3 公里 · 仅本次搜索显示的候选</p><div id="amap-live-pager" hidden><button type="button" id="amap-prev-page">上一页</button><span id="amap-page-label"></span><button type="button" id="amap-next-page">下一页</button></div></section></div><section class="saved-places" aria-label="已入库地点"><div class="panel-heading"><h3>已入库样本 <span class="count">{len(rows):02d}</span></h3><small>按直线距离排序</small></div>
@@ -347,6 +383,7 @@ def pilot_page(db, token, radius, notice, is_admin, filters, map_config=None):
 </section><div class="query-footnote"><p>中信银行网点和中国银行 ATM 分别使用港中大（深圳）下园、上园的区域代表点。距离为估算，具体入口和开放情况待核实；位置示意图不含道路。</p><p>坐标数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors（ODbL）</a></p></div>
 <section class="surface" id="review"><div class="review-heading"><div><h2 class="section-label">{icon('edit')} 一起，让信息更准确</h2><p>发现地址有误？在地点卡片中提交纠错，审核结果会显示在这里。</p></div>{'<a class="hero-link" href="#import-panel">导入地点 →</a>' if is_admin else ''}</div><div class="review-body"><div class="admin-box" id="admin"><h3>管理工作台</h3>{admin_panel}</div><div class="history-box"><h3>反馈动态</h3>{correction_history(db, hidden, can_review=is_admin)}</div></div></section>{import_panel(hidden) if is_admin else ''}
 {verification_panel}
+{collection_panel(db, hidden) if is_admin else ''}
 {priority_panel}
 <footer class="footer"><span>邻境 LINJING · 发现身边，连接生活</span><span>本地试点版本 · 修改保存在本机数据库</span></footer></main></div></html>'''
 
@@ -356,6 +393,10 @@ class LocalDemoServer(HTTPServer):
         # A loopback-only demo does not need to resolve the Windows computer name.
         TCPServer.server_bind(self)
         self.server_name, self.server_port = self.server_address
+
+    def service_actions(self):
+        if self.pilot:
+            run_due_jobs(self.db)
 
 
 class DemoHandler(BaseHTTPRequestHandler):
@@ -421,7 +462,7 @@ class DemoHandler(BaseHTTPRequestHandler):
             self.serve_map_proxy()
             return
         if path in FORM_PATHS:
-            notice = 'pilot-only' if path in ('/login', '/logout', '/import', '/verify') and not self.server.pilot else 'open-home'
+            notice = 'pilot-only' if path in ('/login', '/logout', '/import', '/verify', '/candidate', '/retry') and not self.server.pilot else 'open-home'
             self.send_response(303)
             self.send_header('Location', '/?notice=' + notice)
             self.send_header('Cache-Control', 'no-store')
@@ -444,7 +485,7 @@ class DemoHandler(BaseHTTPRequestHandler):
         if not self.valid_host() or self.path not in paths:
             self.send_error(404)
             return
-        if self.path in ('/import', '/verify') and not self.is_admin():
+        if self.path in ('/import', '/verify', '/candidate', '/retry') and not self.is_admin():
             self.send_error(403)
             return
         cookie = None
@@ -479,10 +520,32 @@ class DemoHandler(BaseHTTPRequestHandler):
                     dataset = json.loads(raw.lstrip('\ufeff'))
                 except (ValueError, RecursionError) as error:
                     raise ValueError('文件不是有效的 JSON。') from error
-                metadata, rows = validate_dataset(dataset)
-                added = import_dataset(self.server.db, metadata, rows)
-                self.send_page(radius, notice=f'导入完成：新增 {added} 条，跳过已有 {len(rows) - added} 条。',
+                job_id = create_upload_job(self.server.db, dataset)
+                job = self.server.db.execute('SELECT * FROM collection_jobs WHERE id=?', (job_id,)).fetchone()
+                self.send_page(radius, notice=(f'任务 {job_id} 已生成 {job["candidate_count"]} 条待审核候选。'
+                    if job['status'] == 'success' else f'任务 {job_id} 失败：{job["error"]}'),
                                filters=filters)
+                return
+            if self.path == '/candidate':
+                raw_id = fields.get('candidate_id', [''])[0]
+                decision = fields.get('decision', [''])[0]
+                if not raw_id.isascii() or not raw_id.isdigit() or decision not in ('accept', 'reject'):
+                    raise ValueError('候选审核参数无效。')
+                if decision == 'accept' and fields.get('permission_confirmed', [''])[0] != 'yes':
+                    raise ValueError('入库前请先核对并确认来源许可与地点信息。')
+                review_candidate(self.server.db, int(raw_id), decision == 'accept')
+                self.send_page(radius, notice='候选已' + ('确认入库或更新。' if decision == 'accept' else '驳回。'),
+                               filters=filters)
+                return
+            if self.path == '/retry':
+                raw_id = fields.get('job_id', [''])[0]
+                if not raw_id.isascii() or not raw_id.isdigit():
+                    raise ValueError('采集任务编号无效。')
+                job = self.server.db.execute('SELECT * FROM collection_jobs WHERE id=?', (int(raw_id),)).fetchone()
+                if job is None or job['source_type'] != 'local_json' or job['status'] != 'failed':
+                    raise ValueError('任务不存在或不能重试。')
+                run_job(self.server.db, job['id'])
+                self.send_page(radius, notice='任务已重试，请查看执行记录。', filters=filters)
                 return
             if self.path == '/login':
                 code = fields.get('code', [''])[0].strip()
@@ -537,7 +600,7 @@ class DemoHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
-def start_server(pilot_db=None, open_browser=False, port=0):
+def start_server(pilot_db=None, open_browser=False, port=0, collection_file=None, interval_minutes=None):
     if pilot_db is None:
         db = connect(':memory:')
     else:
@@ -546,6 +609,13 @@ def start_server(pilot_db=None, open_browser=False, port=0):
         db.execute('PRAGMA foreign_keys = ON')
         ensure_verification_table(db)
         ensure_query_interest_table(db)
+        ensure_tables(db)
+        if collection_file is not None:
+            path = str(Path(collection_file).resolve())
+            existing = db.execute('''SELECT id FROM collection_jobs WHERE source_type='local_json'
+                AND source_path=? AND interval_minutes IS ? LIMIT 1''', (path, interval_minutes)).fetchone()
+            if existing is None:
+                create_file_job(db, path, interval_minutes)
     with closing(db), LocalDemoServer(('127.0.0.1', port), DemoHandler) as server:
         server.pilot = pilot_db is not None
         server.map_config = None

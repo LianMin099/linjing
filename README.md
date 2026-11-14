@@ -2,7 +2,7 @@
 
 邻境是智能应用创新开发大赛赛题四（银行与小区信息采集及查询系统）的参赛项目，以深圳信息职业技术大学周边为试点。
 
-源码与真实提交历史：[GitHub 仓库](https://github.com/LianMin099/linjing)已公开供评审访问；[Gitee 仓库](https://gitee.com/huangkailin_hkl/linjing)作为备份，保持原可见性设置。
+源码与真实提交历史：[公开的 GitHub 仓库](https://github.com/LianMin099/linjing)。Gitee 仅作备份，不作为评审入口。
 
 初赛评审建议先看[材料导读](docs/初赛材料导读.md)：它按顺序连接设计说明、接口验证、样本来源、运行复现和源码，并标明每项证据能支持的结论。
 
@@ -32,7 +32,7 @@
 
 在项目目录执行 `python demo_workflow.py`。演示使用虚构地点，依次展示周边查询、提交地址纠错、审核通过及查询更新。数据库只存在于本次运行的内存中。演示不需要 Key 或网络。
 
-真实样本查询已经支持本机 SQLite 持久保存、纠错审核以及可选的高德在线地图。外部定时采集和独立部署仍未完成。
+试点样本查询支持本机 SQLite 持久保存、纠错审核和可选的高德在线地图。管理员上传 JSON 可生成待审核候选；用 `--collection-file` 指定有保存许可的本机来源文件后，可在程序运行期间定时重新读取，结果进入候选区。它不抓取高德 POI，也不是独立服务器定时服务；独立部署仍未完成。
 
 ## 一条命令启动试点
 
@@ -56,13 +56,15 @@
 
 扩充数据前先查看[新增地点候选](docs/新增地点候选.md)。候选名单与已入库样本分开，只有取得可追溯坐标并通过范围检查后才入库。
 
-当前随项目提供 9 条地点样本，其中深圳农村商业银行龙城支行使用中粮祥云国际写字楼 2 栋的开放地图建筑参考点，非支行入口；黄阁翠苑使用同名公交站参考点，非小区入口。银行资料可核对历史地址和支行名称，但当前营业仍未知。新样本会在下次启动时按来源编号自动补入本机数据库；关闭旧窗口后重新启动即可看到。具体依据与限制见[样本说明](samples/README.md)。
+当前随项目提供 9 条地点样本，其中深圳农村商业银行龙城支行使用中粮祥云国际写字楼 2 栋的开放地图建筑参考点，非支行入口；黄阁翠苑使用同名公交站参考点，非小区入口。银行资料可核对历史地址和支行名称，但当前营业仍未知。随仓库提供的试点样本会在下次启动时按来源编号补入本机数据库；管理员上传的新来源须先进入待审候选，确认后才会显示。具体依据与限制见[样本说明](samples/README.md)。
 
 `data/pilot.sqlite` 是本机试玩数据库，可能包含测试地址，不能直接作为参赛的真实数据结论。准备展示时，可用 `python run_pilot.py --db data/review.sqlite --open-browser` 打开独立数据库，再逐项核验。不要删除原数据库，以免丢失纠错和审核记录。
 
-`python import_places.py 数据文件.json` 只检查数据。确认允许存储后，可添加 `--db data/linjing.sqlite` 写入已创建的 `data` 目录。入库后保留来源、使用依据和导入时间。同一来源编号重复导入会跳过，已审核修改不会被覆盖。网页教学演示继续使用独立的虚构数据。
+`python import_places.py 数据文件.json` 只检查数据。确认允许存储后，可添加 `--db data/linjing.sqlite` 写入已创建的 `data` 目录。入库后保留来源、使用依据和导入时间。相同来源编号的内容不变时不升版本；字段变化时只更新变化字段并记录变更摘要；已通过纠错审核的地址不会被来源数据覆盖。网页教学演示继续使用独立的虚构数据。
 
-JSON 顶层包含 `coordinate_system`（目前只接受 `WGS84`）、`source_url`、`permission_url`、`school` 和 `places`。`school` 包含 `longitude`、`latitude`、`source_url`、`permission_url`。`places` 中每条包含 `source_id`、`kind`（`bank`、`atm` 或 `community`）、`name`、`address`、`longitude`、`latitude`。程序检查链接格式和 3 公里范围，使用依据需人工核对。
+管理员网页的手动采集先把 JSON 放入待审核候选，确认来源许可、地点身份和坐标后才入库。可用 `python run_pilot.py --collection-file 路径.json --collection-interval-minutes 60` 定时读取同一来源；仅在本机程序运行时触发，关闭期间不执行，重启后过期任务只运行一次。任务记录包含待采集、执行中、成功、失败、时间、候选数和失败原因；本机文件任务失败后可在管理员页重试。`python -B verify_collection.py` 使用临时文件里的模拟变更验证这条流程，不证明外部数据源授权或地点真实性。
+
+JSON 顶层包含 `coordinate_system`（目前只接受 `WGS84`）、`source_url`、`permission_url`、`school` 和 `places`。`school` 包含 `longitude`、`latitude`、`source_url`、`permission_url`。`places` 中每条包含 `source_id`、`kind`（`bank`、`atm` 或 `community`）、`name`、`address`、`longitude`、`latitude`。程序检查链接格式和 3 公里范围，使用依据需人工核对。当前试点以 `114.210700, 22.687940`（WGS84、OSM 学校面历史代表点）为 3 公里圆心，不是校门；数据许可与参考点限制见[说明](docs/数据许可与参考点.md)。
 
 ## 在线地图（可选）
 

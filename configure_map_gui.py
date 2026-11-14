@@ -45,7 +45,7 @@ def main():
             return
         for entry in entries:
             entry.delete(0, 'end')
-        status.set('配置已保存。可以关闭此窗口，并告诉 Codex「配置好了」。')
+        status.set('配置已保存。关闭此窗口并重新启动应用即可。')
         messagebox.showinfo('保存成功', '配置已保存到本机。关闭旧的查询窗口后重新打开邻境。', parent=root)
 
     ttk.Button(panel, text='保存配置', command=save).pack(anchor='e', pady=(14, 0))

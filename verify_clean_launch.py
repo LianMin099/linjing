@@ -13,7 +13,7 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 
 FILES = ('run_pilot.py', 'demo_web.py', 'demo_workflow.py', 'import_places.py',
-         'linjing_db.py', 'live_map.py', 'map_config.py', 'ui_assets.py',
+         'linjing_db.py', 'live_map.py', 'map_config.py', 'ui_assets.py', 'collection_jobs.py',
          'samples/pilot_osm.json')
 
 
