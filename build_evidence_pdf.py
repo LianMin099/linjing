@@ -7,10 +7,12 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     Image,
+    Flowable,
     PageBreak,
     Paragraph,
     SimpleDocTemplate,
@@ -47,6 +49,31 @@ def screenshot(name, caption):
     return [para(caption, SECTION), Image(str(path), width=250 * mm, height=141 * mm), Spacer(1, 6 * mm)]
 
 
+class ScreenshotHalf(Flowable):
+    """Show one half of the same tall browser capture without shrinking its text."""
+
+    def __init__(self, name, upper):
+        super().__init__()
+        self.path = EVIDENCE / name
+        if not self.path.is_file():
+            raise FileNotFoundError(self.path)
+        self.width = 220 * mm
+        self.height = 137 * mm
+        self.upper = upper
+        self.hAlign = "CENTER"
+
+    def draw(self):
+        source_width, source_height = ImageReader(str(self.path)).getSize()
+        full_height = self.width * source_height / source_width
+        self.canv.saveState()
+        clip = self.canv.beginPath()
+        clip.rect(0, 0, self.width, self.height)
+        self.canv.clipPath(clip, stroke=0)
+        y = self.height - full_height if self.upper else 0
+        self.canv.drawImage(str(self.path), 0, y, width=self.width, height=full_height)
+        self.canv.restoreState()
+
+
 def footer(canvas, doc):
     canvas.saveState()
     canvas.setFont("SimHei", 8)
@@ -73,7 +100,7 @@ rows = [
     ["材料", "对应结论"],
     ["首次接口验证_20261106.md", "两类候选各 10 条的字段统计与限制"],
     ["本机业务闭环复现_20261113.md", "干净目录自动检查、浏览器彩排和重启记录"],
-    ["01 至 04 浏览器截图", "查询、待审核、审核通过、版本更新的页面状态"],
+    ["01 至 05 浏览器截图", "查询、纠错审核、版本更新及在线地图与筛选的页面状态"],
     ["samples/README.md", "9 条试点样本的来源、坐标性质和限制"],
     ["本机采集任务复现_20261114.md", "本机文件任务与模拟增量变更；不代表外部接口许可"],
 ]
@@ -98,6 +125,16 @@ story.append(PageBreak())
 story.extend(screenshot("04-版本更新.jpg", "7. 新版本：演示地址、版本 2，仍标记未核验"))
 story.extend([
     para("验证边界：现有样本不足以代表学校周边全部银行和小区；部分坐标为区域或楼宇参考点。独立服务器部署、真实入口及当前营业状态仍待另行核对。", SMALL),
+])
+story.append(PageBreak())
+story.extend([
+    para("8. 在线地图：筛选、统计与编号标记", SECTION),
+    para("2026-11-14 本机独立验证库的同一次实际浏览器截图。京基·御景中央花园（一期）、3000 米、银行和 ATM：当前结果 3 处，其中银行 2、ATM 1；地图显示所选小区与 1 至 3 号地点。截图在两页分段展示，未拼接不同查询。", SMALL),
+    ScreenshotHalf("05-在线地图与筛选.png", upper=True),
+    PageBreak(),
+    para("9. 同次查询：地图图例与三张地点卡片", SECTION),
+    para("下半部分与上一页来自同一张浏览器截图。卡片共 3 张，顺序与地图编号一致。地图加载和界面同步已验证；地点入口、营业状态及许可边界仍须另行核对。", SMALL),
+    ScreenshotHalf("05-在线地图与筛选.png", upper=False),
 ])
 
 doc = SimpleDocTemplate(str(OUTPUT), pagesize=landscape(A4), leftMargin=18 * mm, rightMargin=18 * mm,

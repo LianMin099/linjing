@@ -20,15 +20,19 @@ def main():
     root = Path(__file__).parent
     with TemporaryDirectory(prefix='linjing-launchers-') as directory:
         folder = Path(directory)
+        app = folder / 'app'
+        app.mkdir()
+        fake_bin = folder / 'fake-bin'
+        fake_bin.mkdir()
         # 替身只记录参数，不调用地图接口，也不打开窗口。
-        (folder / 'python.cmd').write_text('@echo off\r\necho %*>>"%LINJING_LAUNCH_LOG%"\r\n', encoding='ascii')
+        (fake_bin / 'python.cmd').write_text('@echo off\r\necho %*>>"%LINJING_LAUNCH_LOG%"\r\n', encoding='ascii')
         log = folder / 'launch.log'
         environment = os.environ.copy()
-        environment['PATH'] = str(folder) + os.pathsep + environment['PATH']
+        environment['PATH'] = str(fake_bin) + os.pathsep + environment['PATH']
         environment['LINJING_LAUNCH_LOG'] = str(log)
         for script, expected in SCRIPTS.items():
-            shutil.copy2(root / script, folder / script)
-            result = subprocess.run(['cmd', '/d', '/c', str(folder / script)], cwd=folder,
+            shutil.copy2(root / script, app / script)
+            result = subprocess.run(['cmd', '/d', '/c', str(app / script)], cwd=app,
                                     env=environment, stdin=subprocess.DEVNULL,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10)
             if result.returncode:
@@ -38,11 +42,12 @@ def main():
                 raise AssertionError('{} did not dispatch {}'.format(script, expected))
         missing = environment.copy()
         missing['PATH'] = str(Path(os.environ['SystemRoot']) / 'System32')
-        result = subprocess.run(['cmd', '/d', '/c', str(folder / '开始验证.cmd')], cwd=folder,
+        result = subprocess.run(['cmd', '/d', '/c', str(app / '开始验证.cmd')], cwd=app,
                                 env=missing, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10)
-        if result.returncode != 1:
-            raise AssertionError('缺少 Python 时没有返回明确错误')
+        output = result.stdout.decode('utf-8', errors='replace')
+        if result.returncode != 1 or '找不到 Python' not in output:
+            raise AssertionError('缺少 Python 时没有返回安装提示和非零状态：{}'.format(output))
         print('通过：六个 .cmd 在隔离目录均使用 PATH 中的 python 并调用对应入口。')
         print('缺少 Python 时，开始验证脚本返回安装提示和非零状态。')
         print('此项仅检查启动参数；接口、浏览器和 GUI 功能另行验证。')

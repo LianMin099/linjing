@@ -8,7 +8,7 @@
 
 初赛设计说明见[3 页 PDF](docs/邻境_初赛设计说明.pdf)，可编辑内容见[Markdown 草稿](docs/初赛设计说明草稿.md)。PDF 由 `build_design_pdf.py` 生成，需安装 ReportLab；提交前应再次核对内容和页数。
 
-初步验证可先看[5 页证据 PDF](docs/邻境_初步验证证据.pdf)，其中连接接口字段统计、干净数据库复现和四张真实浏览器截图；原始记录保留在 `docs/验证证据/`，PDF 由 `build_evidence_pdf.py` 生成。
+初步验证可先看[7 页证据 PDF](docs/邻境_初步验证证据.pdf)，其中连接接口字段统计、干净数据库复现和五张真实浏览器截图（地图与列表同屏截图分两页展示）；原始记录保留在 `docs/验证证据/`，PDF 由 `build_evidence_pdf.py` 生成。
 
 ## 当前进度
 
