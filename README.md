@@ -2,7 +2,7 @@
 
 邻境是智能应用创新开发大赛赛题四（银行与小区信息采集及查询系统）的参赛项目，以深圳信息职业技术大学周边为试点。
 
-源码与真实提交历史：[GitHub 仓库](https://github.com/LianMin099/linjing)、[Gitee 仓库](https://gitee.com/huangkailin_hkl/linjing)。开发期间仓库保持私有；提交前须确认评审访问方式。
+源码与真实提交历史：[GitHub 仓库](https://github.com/LianMin099/linjing)已公开供评审访问；[Gitee 仓库](https://gitee.com/huangkailin_hkl/linjing)作为备份，保持原可见性设置。
 
 初赛评审建议先看[材料导读](docs/初赛材料导读.md)：它按顺序连接设计说明、接口验证、样本来源、运行复现和源码，并标明每项证据能支持的结论。
 
